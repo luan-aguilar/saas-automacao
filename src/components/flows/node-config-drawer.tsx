@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { extractVariableNames } from "./nodes/types";
-import { X, Trash2, AlertTriangle } from "lucide-react";
+import { X, Trash2, AlertTriangle, Plus } from "lucide-react";
 
 export const MAX_STATIC_MESSAGE_BUTTONS = 3;
 
@@ -199,28 +199,73 @@ function StaticMessageButtonsField({
   buttons: string[];
   onChange: (buttons: string[]) => void;
 }) {
-  const exceedsLimit = buttons.length > MAX_STATIC_MESSAGE_BUTTONS;
+  const atLimit = buttons.length >= MAX_STATIC_MESSAGE_BUTTONS;
+
+  function updateButtonAt(index: number, value: string) {
+    onChange(buttons.map((btn, i) => (i === index ? value : btn)));
+  }
+
+  function removeButtonAt(index: number) {
+    onChange(buttons.filter((_, i) => i !== index));
+  }
+
+  function addButton() {
+    if (atLimit) return;
+    onChange([...buttons, ""]);
+  }
 
   return (
     <div className="space-y-1.5">
-      <Label>Botões / opções (um por linha)</Label>
-      <Textarea
-        value={buttons.join("\n")}
-        onChange={(e) => onChange(e.target.value.split("\n").filter(Boolean))}
-        rows={4}
-        placeholder={"Falar com atendente\nVer catálogo\nAgendar horário"}
-        className={cn(exceedsLimit && "border-destructive focus-visible:ring-destructive/50")}
-      />
+      <Label>Botões / opções</Label>
+
+      <div className="space-y-2">
+        {buttons.map((btn, index) => (
+          <div key={index} className="flex items-center gap-2">
+            <Input
+              value={btn}
+              onChange={(e) => updateButtonAt(index, e.target.value)}
+              placeholder={`Botão ${index + 1} (ex: Falar com atendente)`}
+              maxLength={20}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              title="Remover botão"
+              onClick={() => removeButtonAt(index)}
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ))}
+
+        {buttons.length === 0 && (
+          <p className="text-xs text-muted-foreground">Nenhum botão adicionado ainda.</p>
+        )}
+      </div>
+
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={addButton}
+        disabled={atLimit}
+        className="w-full"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Adicionar botão
+      </Button>
+
       <p
         className={cn(
           "flex items-start gap-1.5 text-xs",
-          exceedsLimit ? "font-medium text-destructive" : "text-muted-foreground"
+          atLimit ? "font-medium text-amber-600" : "text-muted-foreground"
         )}
       >
-        {exceedsLimit && <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+        {atLimit && <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
         <span>
           Máximo de 3 botões permitidos por mensagem (limite da API do WhatsApp).{" "}
-          <span className={exceedsLimit ? "" : "opacity-70"}>
+          <span className={atLimit ? "" : "opacity-70"}>
             ({buttons.length}/{MAX_STATIC_MESSAGE_BUTTONS})
           </span>
         </span>
