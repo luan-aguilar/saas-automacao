@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatPhone } from "@/lib/utils";
-import { AlertTriangle, CheckCircle2, QrCode, RefreshCw, Smartphone } from "lucide-react";
+import { AlertTriangle, CheckCircle2, LogOut, QrCode, RefreshCw, Smartphone } from "lucide-react";
 
 type Status = "DISCONNECTED" | "CONNECTING" | "QR_PENDING" | "CONNECTED" | "ERROR";
 
@@ -31,6 +31,7 @@ const POLL_INTERVAL_MS = 3000;
 export function QrDisplay({ initial }: { initial: StatusResponse }) {
   const [data, setData] = useState<StatusResponse>(initial);
   const [loading, setLoading] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -75,6 +76,29 @@ export function QrDisplay({ initial }: { initial: StatusResponse }) {
     }
 
     setLoading(false);
+  }
+
+  async function handleDisconnect() {
+    setDisconnecting(true);
+    setError(null);
+
+    const res = await fetch("/api/whatsapp/disconnect", { method: "POST" });
+
+    if (res.ok) {
+      // Volta para a tela inicial de geração do QR Code.
+      setData({
+        status: "DISCONNECTED",
+        phoneNumber: null,
+        qrCode: null,
+        qrExpiresAt: null,
+        lastConnectedAt: null,
+      });
+    } else {
+      const body = await res.json().catch(() => ({}));
+      setError(body.error ?? "Não foi possível desconectar o WhatsApp. Tente novamente em instantes.");
+    }
+
+    setDisconnecting(false);
   }
 
   return (
@@ -131,10 +155,22 @@ export function QrDisplay({ initial }: { initial: StatusResponse }) {
           </p>
         )}
 
-        <Button onClick={handleConnect} disabled={loading || data.status === "CONNECTED"} className="w-full">
-          <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
-          {data.status === "CONNECTED" ? "Conectado" : "Conectar / Gerar novo QR Code"}
-        </Button>
+        {data.status === "CONNECTED" ? (
+          <Button
+            onClick={handleDisconnect}
+            disabled={disconnecting}
+            variant="destructive"
+            className="w-full"
+          >
+            <LogOut className={disconnecting ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+            {disconnecting ? "Desconectando..." : "Desconectar WhatsApp"}
+          </Button>
+        ) : (
+          <Button onClick={handleConnect} disabled={loading} className="w-full">
+            <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+            Conectar / Gerar novo QR Code
+          </Button>
+        )}
 
         <p className="text-xs text-muted-foreground">
           Conectado à Evolution API (<code>WHATSAPP_SERVICE_URL</code>). O QR Code é gerado em
