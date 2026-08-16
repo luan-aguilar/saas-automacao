@@ -1,4 +1,5 @@
 import type { NextAuthConfig } from "next-auth";
+import type { Role } from "@prisma/client";
 
 /**
  * Configuração "edge-safe" do NextAuth — usada pelo middleware (Edge Runtime).
@@ -39,10 +40,16 @@ export const authConfig = {
       return token;
     },
     session({ session, token }) {
+      // O NextAuth v5 (beta) nem sempre propaga corretamente a extensão de
+      // tipos de `next-auth/jwt` (declarada em `src/types/next-auth.d.ts`)
+      // para o parâmetro `token` deste callback, fazendo o TypeScript
+      // enxergar `token.id`/`token.role`/`token.mustChangePassword` como
+      // `unknown`. Como esses campos são preenchidos por nós mesmos no
+      // callback `jwt` abaixo, fazemos o cast explícito aqui.
       if (session.user) {
-        session.user.id = token.id;
-        session.user.role = token.role;
-        session.user.mustChangePassword = token.mustChangePassword;
+        session.user.id = token.id as string;
+        session.user.role = token.role as Role;
+        session.user.mustChangePassword = token.mustChangePassword as boolean;
       }
       return session;
     },
