@@ -21,15 +21,41 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
       async authorize(rawCredentials) {
         const parsed = credentialsSchema.safeParse(rawCredentials);
-        if (!parsed.success) return null;
+        if (!parsed.success) {
+          console.log("[AUTH] Credenciais em formato inválido:", parsed.error.flatten().fieldErrors);
+          return null;
+        }
 
-        const { email, password } = parsed.data;
+        // Normaliza o e-mail (minúsculas + sem espaços) para evitar falsos
+        // negativos por diferença de caixa/espaço entre o que foi digitado e
+        // o que está salvo no banco (Postgres compara strings exatamente).
+        const email = parsed.data.email.toLowerCase().trim();
+        const password = parsed.data.password;
+
+        console.log("[AUTH] Tentando login para:", email);
 
         const user = await prisma.user.findUnique({ where: { email } });
-        if (!user || user.status !== "ACTIVE") return null;
+        console.log("[AUTH] Usuário encontrado no banco?:", !!user);
 
-        const passwordMatches = await bcrypt.compare(password, user.passwordHash);
-        if (!passwordMatches) return null;
+        if (!user) {
+          return null;
+        }
+
+        if (user.status !== "ACTIVE") {
+          console.log("[AUTH] Usuário encontrado, mas está INATIVO:", user.email);
+          return null;
+        }
+
+        // Campo correto conforme prisma/schema.prisma (model User): passwordHash.
+        console.log("[AUTH] Hash de senha presente no registro do usuário?:", !!user.passwordHash);
+
+        // bcryptjs (puro JS, compatível com o runtime Node.js das funções da Vercel).
+        const isValid = await bcrypt.compare(password, user.passwordHash);
+        console.log("[AUTH] Senha bate?:", isValid);
+
+        if (!isValid) {
+          return null;
+        }
 
         return {
           id: user.id,

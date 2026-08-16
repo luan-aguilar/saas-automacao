@@ -49,7 +49,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message }, { status: 400 });
   }
 
-  const { name, email, phone } = parsed.data;
+  const { name, phone } = parsed.data;
+  // Normalizado (minúsculas + sem espaços) para ficar consistente com a
+  // busca feita no login (src/auth.ts).
+  const email = parsed.data.email.toLowerCase().trim();
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
