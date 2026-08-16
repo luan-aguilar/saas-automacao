@@ -1,0 +1,238 @@
+// Schema Prisma — Plataforma de Automação de Robôs de WhatsApp (Multi-Tenant)
+// Cada usuário CLIENTE é um "tenant": possui sua própria Config, WhatsappConnection,
+// Flows e Chats. O usuário MASTER gerencia os tenants e também pode operar seu
+// próprio robô (por isso Config/WhatsappConnection/Flow/Chat pertencem a User,
+// independente do role).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  MASTER
+  CLIENTE
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum WhatsappStatus {
+  DISCONNECTED
+  CONNECTING
+  QR_PENDING
+  CONNECTED
+  ERROR
+}
+
+enum ChatStatus {
+  OPEN
+  CLOSED
+  ARCHIVED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageSender {
+  CONTACT
+  AI
+  HUMAN
+  SYSTEM
+}
+
+enum FlowNodeType {
+  TRIGGER
+  AI_RESPONSE
+  STATIC_MESSAGE
+  CONDITION
+}
+
+// ---------------------------------------------------------------------------
+// Usuários / RBAC
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  phone        String?
+  passwordHash String
+  role         Role       @default(CLIENTE)
+  status       UserStatus @default(ACTIVE)
+
+  // Indica se o usuário ainda está usando a senha temporária gerada pelo MASTER
+  mustChangePassword Boolean @default(true)
+
+  // Quem (MASTER) criou esta conta de cliente
+  createdById String?
+  createdBy   User?   @relation("UserCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdUsers User[] @relation("UserCreatedBy")
+
+  config             Config?
+  whatsappConnection WhatsappConnection?
+  flows              Flow[]
+  chats              Chat[]
+  auditLogs          AuditLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Configurações do robô (por cliente/tenant)
+// ---------------------------------------------------------------------------
+
+model Config {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // API Key da OpenAI do cliente, armazenada criptografada (AES-256-GCM) — nunca em texto puro
+  openaiApiKeyEncrypted String?
+  openaiApiKeyLast4     String? // últimos 4 caracteres, só para exibição ("sk-...ab12")
+
+  // Prompt de sistema geral do robô
+  systemPrompt String @default("Você é um assistente virtual educado e objetivo. Responda de forma clara e curta.")
+
+  model            String  @default("gpt-4o-mini")
+  temperature      Float   @default(0.7)
+  aiEnabledDefault Boolean @default(true) // valor padrão do toggle de IA para novas conversas
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Conexão com o WhatsApp (pareamento via QR Code)
+// ---------------------------------------------------------------------------
+
+model WhatsappConnection {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status      WhatsappStatus @default(DISCONNECTED)
+  phoneNumber String?
+
+  // QR code atual (data URL base64), atualizado pelo serviço externo (Baileys/whatsapp-web.js)
+  // via webhook -> POST /api/whatsapp/qr
+  qrCode      String? @db.Text
+  qrExpiresAt DateTime?
+
+  // Identificador da sessão no serviço externo responsável por manter o socket com o WhatsApp
+  externalSessionId String?
+
+  lastConnectedAt    DateTime?
+  lastDisconnectedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Fluxos visuais (React Flow) — estilo n8n
+// ---------------------------------------------------------------------------
+
+model Flow {
+  id          String  @id @default(cuid())
+  userId      String
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  isActive    Boolean @default(false)
+
+  // Estrutura completa do React Flow (nodes + edges) serializada como JSON
+  nodes Json @default("[]")
+  edges Json @default("[]")
+
+  version Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Live Chat / Central de Atendimento
+// ---------------------------------------------------------------------------
+
+model Chat {
+  id     String @id @default(cuid())
+  userId String // tenant dono da conversa
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  contactName  String
+  contactPhone String
+  contactAvatarUrl String?
+
+  status ChatStatus @default(OPEN)
+
+  // Toggle por conversa: quando false, a IA para de responder e um humano assume
+  aiEnabled Boolean @default(true)
+
+  lastMessageAt DateTime  @default(now())
+  lastMessagePreview String?
+  unreadCount   Int       @default(0)
+
+  messages Message[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+  @@index([userId, lastMessageAt])
+}
+
+model Message {
+  id     String @id @default(cuid())
+  chatId String
+  chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  direction MessageDirection
+  sender    MessageSender
+  content   String           @db.Text
+  mediaUrl  String?
+
+  // ID da mensagem no provedor do WhatsApp (para status de entrega/leitura)
+  externalId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([chatId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Auditoria (ex: MASTER criou/desativou cliente, resetou senha, etc.)
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id     String @id @default(cuid())
+  userId String // quem executou a ação (geralmente um MASTER)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  action  String // ex: "CLIENT_CREATED", "CLIENT_DEACTIVATED", "PASSWORD_RESET"
+  target  String? // id do recurso afetado
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
