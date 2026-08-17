@@ -231,13 +231,14 @@ function conditionNode(
   id: string,
   position: { x: number; y: number },
   label: string,
-  value: string
+  value: string,
+  operator: "CONTAINS" | "EQUALS" = "CONTAINS"
 ): Node {
   return {
     id,
     type: "condition",
     position,
-    data: { label, variable: "ultima_resposta", operator: "CONTAINS", value },
+    data: { label, variable: "ultima_resposta", operator, value },
   };
 }
 
@@ -281,7 +282,7 @@ const NODES: Node[] = [
     data: {
       label: "Categorias — Página 1",
       message:
-        "Olá, maravilhosa! 🤩 Seja bem-vinda ao Home Concept! Escolha abaixo a categoria de serviço que você procura:",
+        "Olá, maravilhosa! 🤩 Seja bem-vinda ao Home Concept! Escolha abaixo a categoria de serviço que você procura:\n\n_Não está vendo os botões? Responda com o número:_\n1️⃣ Cabelo   2️⃣ Unhas   3️⃣ Mais opções",
       interactiveType: "buttons",
       buttons: ["💇‍♀️ Cabelo", "💅 Unhas", "Mais opções ➡️"],
     },
@@ -291,18 +292,28 @@ const NODES: Node[] = [
   conditionNode("bs-cond-pag1-cabelo", { x: 380, y: 460 }, "Escolheu Cabelo?", "Cabelo"),
   conditionNode("bs-cond-pag1-unhas", { x: 200, y: 600 }, "Escolheu Unhas?", "Unhas"),
 
+  // Fallback por número — os botões do WhatsApp têm um bug conhecido do
+  // Baileys/Evolution API onde não renderizam no WhatsApp Web/Desktop
+  // (mensagem "Não foi possível carregar a mensagem"), mesmo funcionando
+  // normalmente no celular. Antes de desistir e cair no retry, checa se a
+  // cliente digitou o número da opção (1/2/3) em vez de clicar no botão.
+  conditionNode("bs-cond-pag1-digito1", { x: 20, y: 680 }, "Digitou '1' (Cabelo)?", "1", "EQUALS"),
+  conditionNode("bs-cond-pag1-digito2", { x: -160, y: 720 }, "Digitou '2' (Unhas)?", "2", "EQUALS"),
+  conditionNode("bs-cond-pag1-digito3", { x: -340, y: 760 }, "Digitou '3' (Mais opções)?", "3", "EQUALS"),
+
   // Retry da página 1 — cai aqui quando a resposta não bateu com NENHUM dos 3
-  // botões (ex: a cliente digitou um texto livre em vez de clicar). Reenvia
-  // os mesmos botões com uma mensagem mais curta, em vez de "adivinhar" a
+  // botões nem com o número correspondente (ex: a cliente digitou um texto
+  // livre qualquer). Reenvia as mesmas opções, em vez de "adivinhar" a
   // categoria por eliminação (foi exatamente esse bug que fez um "bom dia"
   // ser tratado como se fosse "Unhas" antes desta correção).
   {
     id: "bs-pagina1-retry",
     type: "staticMessage",
-    position: { x: 200, y: 760 },
+    position: { x: -340, y: 900 },
     data: {
       label: "Categorias — Página 1 (não entendi)",
-      message: "Desculpe, não entendi 🙏 Por favor, toque em uma das opções abaixo:",
+      message:
+        "Desculpe, não entendi 🙏 Toque em uma das opções abaixo ou responda com o número:\n1️⃣ Cabelo   2️⃣ Unhas   3️⃣ Mais opções",
       interactiveType: "buttons",
       buttons: ["💇‍♀️ Cabelo", "💅 Unhas", "Mais opções ➡️"],
     },
@@ -316,7 +327,8 @@ const NODES: Node[] = [
     position: { x: 820, y: 460 },
     data: {
       label: "Categorias — Página 2",
-      message: "Mais categorias disponíveis:",
+      message:
+        "Mais categorias disponíveis:\n\n_Não está vendo os botões? Responda com o número:_\n1️⃣ Cílios   2️⃣ Sobrancelhas   3️⃣ Voltar",
       interactiveType: "buttons",
       buttons: ["👁️ Cílios", "✏️ Sobrancelhas", "⬅️ Voltar"],
     },
@@ -326,14 +338,20 @@ const NODES: Node[] = [
   conditionNode("bs-cond-pag2-cilios", { x: 1040, y: 740 }, "Escolheu Cílios?", "Cílios"),
   conditionNode("bs-cond-pag2-sobrancelhas", { x: 1220, y: 880 }, "Escolheu Sobrancelhas?", "Sobrancelhas"),
 
+  // Fallback por número da página 2 — mesmo princípio do fallback da página 1.
+  conditionNode("bs-cond-pag2-digito1", { x: 1400, y: 1000 }, "Digitou '1' (Cílios)?", "1", "EQUALS"),
+  conditionNode("bs-cond-pag2-digito2", { x: 1580, y: 1040 }, "Digitou '2' (Sobrancelhas)?", "2", "EQUALS"),
+  conditionNode("bs-cond-pag2-digito3", { x: 1760, y: 1080 }, "Digitou '3' (Voltar)?", "3", "EQUALS"),
+
   // Retry da página 2 — mesmo princípio do retry da página 1 acima.
   {
     id: "bs-pagina2-retry",
     type: "staticMessage",
-    position: { x: 1220, y: 1020 },
+    position: { x: 1760, y: 1220 },
     data: {
       label: "Categorias — Página 2 (não entendi)",
-      message: "Desculpe, não entendi 🙏 Por favor, toque em uma das opções abaixo:",
+      message:
+        "Desculpe, não entendi 🙏 Toque em uma das opções abaixo ou responda com o número:\n1️⃣ Cílios   2️⃣ Sobrancelhas   3️⃣ Voltar",
       interactiveType: "buttons",
       buttons: ["👁️ Cílios", "✏️ Sobrancelhas", "⬅️ Voltar"],
     },
@@ -390,7 +408,14 @@ const EDGES: Edge[] = [
   edge("bs-e-cond-cabelo-yes", "bs-cond-pag1-cabelo", "bs-sub-cabelo", "yes"),
   edge("bs-e-cond-cabelo-no", "bs-cond-pag1-cabelo", "bs-cond-pag1-unhas", "no"),
   edge("bs-e-cond-unhas-yes", "bs-cond-pag1-unhas", "bs-sub-unhas", "yes"),
-  edge("bs-e-cond-unhas-no", "bs-cond-pag1-unhas", "bs-pagina1-retry", "no"),
+  // Nenhum dos 3 textos bateu — antes de desistir, checa o fallback por número.
+  edge("bs-e-cond-unhas-no", "bs-cond-pag1-unhas", "bs-cond-pag1-digito1", "no"),
+  edge("bs-e-pag1digito1-yes", "bs-cond-pag1-digito1", "bs-sub-cabelo", "yes"),
+  edge("bs-e-pag1digito1-no", "bs-cond-pag1-digito1", "bs-cond-pag1-digito2", "no"),
+  edge("bs-e-pag1digito2-yes", "bs-cond-pag1-digito2", "bs-sub-unhas", "yes"),
+  edge("bs-e-pag1digito2-no", "bs-cond-pag1-digito2", "bs-cond-pag1-digito3", "no"),
+  edge("bs-e-pag1digito3-yes", "bs-cond-pag1-digito3", "bs-pagina2", "yes"),
+  edge("bs-e-pag1digito3-no", "bs-cond-pag1-digito3", "bs-pagina1-retry", "no"),
 
   edge("bs-e-pagina2-cond-voltar", "bs-pagina2", "bs-cond-pag2-voltar"),
   // O retry da página 2 reentra na MESMA cadeia de condições da página 2 original.
@@ -403,7 +428,14 @@ const EDGES: Edge[] = [
   edge("bs-e-cond-cilios-yes", "bs-cond-pag2-cilios", "bs-sub-cilios", "yes"),
   edge("bs-e-cond-cilios-no", "bs-cond-pag2-cilios", "bs-cond-pag2-sobrancelhas", "no"),
   edge("bs-e-cond-sobrancelhas-yes", "bs-cond-pag2-sobrancelhas", "bs-sub-sobrancelhas", "yes"),
-  edge("bs-e-cond-sobrancelhas-no", "bs-cond-pag2-sobrancelhas", "bs-pagina2-retry", "no"),
+  // Nenhum dos 3 textos bateu — antes de desistir, checa o fallback por número.
+  edge("bs-e-cond-sobrancelhas-no", "bs-cond-pag2-sobrancelhas", "bs-cond-pag2-digito1", "no"),
+  edge("bs-e-pag2digito1-yes", "bs-cond-pag2-digito1", "bs-sub-cilios", "yes"),
+  edge("bs-e-pag2digito1-no", "bs-cond-pag2-digito1", "bs-cond-pag2-digito2", "no"),
+  edge("bs-e-pag2digito2-yes", "bs-cond-pag2-digito2", "bs-sub-sobrancelhas", "yes"),
+  edge("bs-e-pag2digito2-no", "bs-cond-pag2-digito2", "bs-cond-pag2-digito3", "no"),
+  edge("bs-e-pag2digito3-yes", "bs-cond-pag2-digito3", "bs-pagina1", "yes"),
+  edge("bs-e-pag2digito3-no", "bs-cond-pag2-digito3", "bs-pagina2-retry", "no"),
 
   // As 4 categorias convergem no mesmo Agente de Coleta (IA).
   edge("bs-e-sub-cabelo-ia", "bs-sub-cabelo", "bs-ia-coleta"),
