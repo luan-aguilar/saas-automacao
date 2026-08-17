@@ -278,12 +278,21 @@ const MAX_STEPS = 25;
  * Localiza (ou cria) a conversa do contato na Central de Atendimento e
  * registra a mensagem recebida no histórico — independente de a IA estar
  * ativa ou não, o operador precisa ver tudo que o contato escreveu.
+ *
+ * `defaultAiEnabledForNewChat` só é usado quando a conversa é criada agora
+ * (contato nunca escreveu antes) — é aí que a chave geral de IA
+ * (`Config.aiGloballyEnabled`) entra em ação: se estiver desligada, o
+ * contato novo já nasce com a IA pausada por padrão. Uma conversa já
+ * existente NUNCA tem seu `aiEnabled` mexido aqui — o que o operador
+ * configurou manualmente para ela (via o toggle individual) é sempre
+ * respeitado, mesmo que a chave geral seja ligada/desligada depois.
  */
 async function logInboundMessageAndGetChat(
   userId: string,
   contactPhone: string,
   contactName: string | undefined,
-  content: string
+  content: string,
+  defaultAiEnabledForNewChat: boolean
 ) {
   const existing = await prisma.chat.findUnique({ where: { userId_contactPhone: { userId, contactPhone } } });
 
@@ -304,6 +313,7 @@ async function logInboundMessageAndGetChat(
           contactName: contactName || contactPhone,
           lastMessagePreview: content.slice(0, 120),
           unreadCount: 1,
+          aiEnabled: defaultAiEnabledForNewChat,
         },
       });
 
@@ -323,12 +333,17 @@ async function logInboundMessageAndGetChat(
  * Antes de tudo — SEMPRE, independente de o tenant ter um fluxo ativo ou
  * não — registra a mensagem recebida na Central de Atendimento
  * (`Chat`/`Message`), para ela nunca deixar de aparecer em `/chat`. Só depois
- * disso passa por três portões, nesta ordem:
- *   1. `Config.aiGloballyEnabled` — chave geral do tenant. Se estiver
- *      desligada, NINGUÉM recebe resposta automática, nem contato novo (essa
- *      checagem roda antes de qualquer coisa ligada a um contato específico).
- *   2. `flow: null` — tenant sem fluxo ativo configurado.
- *   3. `Chat.aiEnabled` — operador pausou a IA só para este contato.
+ * disso passa por dois portões:
+ *   1. `flow: null` — tenant sem fluxo ativo configurado.
+ *   2. `Chat.aiEnabled` — controla a automação desta conversa específica.
+ *      `Config.aiGloballyEnabled` (a "chave geral") não é um bloqueio
+ *      universal por cima disso — ela só define o VALOR PADRÃO de
+ *      `aiEnabled` quando uma conversa nova é criada (contato que nunca
+ *      escreveu antes). Ou seja: desligar a chave geral faz contatos novos
+ *      nascerem com a IA pausada, mas conversas que o operador já ativou
+ *      manualmente continuam respondendo normalmente — é assim que dá pra
+ *      manter a IA ligada só para uma conversa específica mesmo com a chave
+ *      geral desligada.
  * Em qualquer um desses casos a mensagem já está salva no histórico, só a
  * automação é que não roda.
  */
@@ -342,16 +357,15 @@ export async function processIncomingMessage(params: {
   const { userId, flow, contactPhone, contactName, messageText } = params;
 
   const effectiveText = messageText || "[mensagem sem texto reconhecível]";
-  const chat = await logInboundMessageAndGetChat(userId, contactPhone, contactName, effectiveText);
 
   const config = await prisma.config.findUnique({ where: { userId }, select: { aiGloballyEnabled: true } });
-  if (config?.aiGloballyEnabled === false) {
-    console.log(
-      "[flow-engine] Chave geral de IA desativada para este tenant — mensagem registrada, sem automação:",
-      { userId, contactPhone }
-    );
-    return;
-  }
+  const chat = await logInboundMessageAndGetChat(
+    userId,
+    contactPhone,
+    contactName,
+    effectiveText,
+    config?.aiGloballyEnabled !== false
+  );
 
   if (!flow) {
     console.log(

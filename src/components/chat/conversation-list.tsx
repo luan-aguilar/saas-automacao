@@ -57,8 +57,8 @@ export function ConversationList({
         </div>
         {!aiGloballyEnabled && (
           <p className="mt-1.5 text-[11px] leading-snug text-destructive">
-            Desativada: o robô não responde ninguém agora, nem contatos novos — mesmo com "IA ativa" numa
-            conversa específica.
+            Desativada: contatos novos não recebem resposta automática. Conversas onde você já ativou a IA
+            manualmente (toggle individual) continuam respondendo normalmente.
           </p>
         )}
       </div>
