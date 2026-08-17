@@ -7,9 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { extractVariableNames } from "./nodes/types";
-import { X, Trash2, AlertTriangle, Plus } from "lucide-react";
+import { X, Trash2, AlertTriangle, Plus, List, MessageSquareText } from "lucide-react";
+import type { StaticMessageListItem } from "./nodes/types";
 
 export const MAX_STATIC_MESSAGE_BUTTONS = 3;
+export const MAX_STATIC_MESSAGE_LIST_ITEMS = 10;
 
 export function NodeConfigDrawer({
   node,
@@ -102,10 +104,44 @@ export function NodeConfigDrawer({
                 rows={4}
               />
             </div>
-            <StaticMessageButtonsField
-              buttons={data.buttons ?? []}
-              onChange={(buttons) => update({ buttons })}
-            />
+
+            <div className="space-y-1.5">
+              <Label>Tipo de mensagem interativa</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={(data.interactiveType ?? "buttons") === "buttons" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => update({ interactiveType: "buttons" })}
+                >
+                  <MessageSquareText className="h-3.5 w-3.5" />
+                  Botões
+                </Button>
+                <Button
+                  type="button"
+                  variant={data.interactiveType === "list" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => update({ interactiveType: "list" })}
+                >
+                  <List className="h-3.5 w-3.5" />
+                  Lista
+                </Button>
+              </div>
+            </div>
+
+            {data.interactiveType === "list" ? (
+              <StaticMessageListField
+                listButtonText={data.listButtonText ?? ""}
+                listItems={data.listItems ?? []}
+                onChangeButtonText={(listButtonText) => update({ listButtonText })}
+                onChangeItems={(listItems) => update({ listItems })}
+              />
+            ) : (
+              <StaticMessageButtonsField
+                buttons={data.buttons ?? []}
+                onChange={(buttons) => update({ buttons })}
+              />
+            )}
           </>
         )}
 
@@ -270,6 +306,130 @@ function StaticMessageButtonsField({
           </span>
         </span>
       </p>
+    </div>
+  );
+}
+
+function slugifyListItemId(title: string, index: number) {
+  const slug = title
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return slug || `item_${index + 1}`;
+}
+
+function StaticMessageListField({
+  listButtonText,
+  listItems,
+  onChangeButtonText,
+  onChangeItems,
+}: {
+  listButtonText: string;
+  listItems: StaticMessageListItem[];
+  onChangeButtonText: (value: string) => void;
+  onChangeItems: (items: StaticMessageListItem[]) => void;
+}) {
+  const atLimit = listItems.length >= MAX_STATIC_MESSAGE_LIST_ITEMS;
+
+  function updateItemAt(index: number, patch: Partial<StaticMessageListItem>) {
+    onChangeItems(listItems.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  }
+
+  function removeItemAt(index: number) {
+    onChangeItems(listItems.filter((_, i) => i !== index));
+  }
+
+  function addItem() {
+    if (atLimit) return;
+    onChangeItems([...listItems, { id: `item_${listItems.length + 1}`, title: "", description: "" }]);
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <Label>Título do botão que abre a lista</Label>
+        <Input
+          value={listButtonText}
+          onChange={(e) => onChangeButtonText(e.target.value)}
+          placeholder="ex: Ver Opções de Serviços"
+          maxLength={20}
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Itens da lista</Label>
+
+        <div className="space-y-2">
+          {listItems.map((item, index) => (
+            <div key={index} className="space-y-1.5 rounded-md border border-border p-2">
+              <div className="flex items-center gap-2">
+                <Input
+                  value={item.title}
+                  onChange={(e) => {
+                    const title = e.target.value;
+                    // Só auto-gera o id a partir do título enquanto o usuário não
+                    // tiver customizado o id manualmente (id ainda no padrão slug).
+                    const shouldAutoId = !item.id || item.id === slugifyListItemId(item.title, index);
+                    updateItemAt(index, {
+                      title,
+                      ...(shouldAutoId ? { id: slugifyListItemId(title, index) } : {}),
+                    });
+                  }}
+                  placeholder={`Item ${index + 1} (ex: Cabelo)`}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title="Remover item"
+                  onClick={() => removeItemAt(index)}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <Textarea
+                value={item.description ?? ""}
+                onChange={(e) => updateItemAt(index, { description: e.target.value })}
+                placeholder="Descrição (opcional, ex: Mechas, Corte, Progressiva...)"
+                rows={2}
+              />
+            </div>
+          ))}
+
+          {listItems.length === 0 && (
+            <p className="text-xs text-muted-foreground">Nenhum item adicionado ainda.</p>
+          )}
+        </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={addItem}
+          disabled={atLimit}
+          className="mt-2 w-full"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Adicionar item
+        </Button>
+
+        <p
+          className={cn(
+            "flex items-start gap-1.5 pt-1.5 text-xs",
+            atLimit ? "font-medium text-amber-600" : "text-muted-foreground"
+          )}
+        >
+          {atLimit && <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+          <span>
+            Máximo de 10 itens permitidos por lista (limite da API do WhatsApp).{" "}
+            <span className={atLimit ? "" : "opacity-70"}>
+              ({listItems.length}/{MAX_STATIC_MESSAGE_LIST_ITEMS})
+            </span>
+          </span>
+        </p>
+      </div>
     </div>
   );
 }

@@ -12,10 +12,29 @@ export type AiResponseData = {
   customPrompt?: string;
 };
 
+/** Tipo de mensagem interativa: botões simples (até 3) ou lista (até 10 itens). */
+export type StaticMessageInteractiveType = "buttons" | "list";
+
+export type StaticMessageListItem = {
+  /** Identificador curto do item (ex: "cabelo") — usado para reconhecer a escolha do contato. */
+  id: string;
+  /** Título do item, exibido na lista (ex: "Cabelo"). */
+  title: string;
+  /** Descrição opcional, exibida abaixo do título na lista (ex: "Mechas, Corte, Progressiva..."). */
+  description?: string;
+};
+
 export type StaticMessageData = {
   label: string;
   message: string;
+  /** "buttons" (padrão, retrocompatível) ou "list" (mensagem de lista do WhatsApp). */
+  interactiveType?: StaticMessageInteractiveType;
+  /** Usado quando interactiveType === "buttons" (até 3 opções). */
   buttons: string[];
+  /** Usado quando interactiveType === "list": título do botão que abre a lista (ex: "Ver Opções de Serviços"). */
+  listButtonText?: string;
+  /** Usado quando interactiveType === "list": itens da lista (até 10). */
+  listItems?: StaticMessageListItem[];
 };
 
 export type ConditionData = {

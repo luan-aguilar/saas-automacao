@@ -21,16 +21,17 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { NodePanel } from "./node-panel";
-import { NodeConfigDrawer, MAX_STATIC_MESSAGE_BUTTONS } from "./node-config-drawer";
+import { NodeConfigDrawer, MAX_STATIC_MESSAGE_BUTTONS, MAX_STATIC_MESSAGE_LIST_ITEMS } from "./node-config-drawer";
 import { DeletableEdge } from "./edges/deletable-edge";
 import { TriggerNodeComponent } from "./nodes/trigger-node";
 import { AiResponseNodeComponent } from "./nodes/ai-response-node";
 import { StaticMessageNodeComponent } from "./nodes/static-message-node";
 import { ConditionNodeComponent } from "./nodes/condition-node";
 import { AlertNotificationNodeComponent } from "./nodes/alert-notification-node";
+import { createBeautySalonTemplate, BEAUTY_SALON_TEMPLATE_NAME } from "@/lib/templates/beauty-salon-template";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Save, Play, Pause, Undo2, Redo2, AlertTriangle } from "lucide-react";
+import { Save, Play, Pause, Undo2, Redo2, AlertTriangle, Sparkles } from "lucide-react";
 
 const nodeTypes: NodeTypes = {
   trigger: TriggerNodeComponent,
@@ -101,14 +102,22 @@ interface FlowBuilderProps {
 
 type HistorySnapshot = { nodes: Node[]; edges: Edge[] };
 
-function findButtonsLimitViolation(nodes: Node[]): Node | null {
-  return (
-    nodes.find((n) => {
-      if (n.type !== "staticMessage") return false;
-      const buttons = (n.data as { buttons?: string[] }).buttons;
-      return Array.isArray(buttons) && buttons.length > MAX_STATIC_MESSAGE_BUTTONS;
-    }) ?? null
-  );
+type InteractiveLimitViolation = { node: Node; reason: "buttons" | "list" };
+
+function findInteractiveLimitViolation(nodes: Node[]): InteractiveLimitViolation | null {
+  for (const n of nodes) {
+    if (n.type !== "staticMessage") continue;
+    const data = n.data as { interactiveType?: string; buttons?: string[]; listItems?: unknown[] };
+
+    if (data.interactiveType === "list") {
+      if (Array.isArray(data.listItems) && data.listItems.length > MAX_STATIC_MESSAGE_LIST_ITEMS) {
+        return { node: n, reason: "list" };
+      }
+    } else if (Array.isArray(data.buttons) && data.buttons.length > MAX_STATIC_MESSAGE_BUTTONS) {
+      return { node: n, reason: "buttons" };
+    }
+  }
+  return null;
 }
 
 function FlowBuilderInner({
@@ -268,12 +277,32 @@ function FlowBuilderInner({
     setSelectedNodeId(null);
   }
 
+  function handleLoadBeautySalonTemplate() {
+    const proceed = window.confirm(
+      `Carregar o template "${BEAUTY_SALON_TEMPLATE_NAME}"?\n\nIsso substitui todos os blocos e conexões atuais deste fluxo no canvas (a substituição só é salva de fato quando você clicar em "Salvar fluxo").`
+    );
+    if (!proceed) return;
+
+    const { nodes: templateNodes, edges: templateEdges } = createBeautySalonTemplate();
+    setSelectedNodeId(null);
+    setSaveError(null);
+    setNodes(templateNodes);
+    setEdges(templateEdges);
+    // Reseta o histórico de undo/redo para o novo ponto de partida do template.
+    historyRef.current = { past: [], future: [] };
+    lastSnapshotRef.current = { nodes: templateNodes, edges: templateEdges };
+    skipHistoryRef.current = true;
+    setHistoryTick((t) => t + 1);
+  }
+
   async function handleSave() {
-    const violatingNode = findButtonsLimitViolation(nodes);
-    if (violatingNode) {
-      const label = (violatingNode.data as { label?: string }).label || "Mensagem Estática";
+    const violation = findInteractiveLimitViolation(nodes);
+    if (violation) {
+      const label = (violation.node.data as { label?: string }).label || "Mensagem Estática";
       setSaveError(
-        `O bloco "${label}" tem mais de ${MAX_STATIC_MESSAGE_BUTTONS} botões. Reduza para no máximo ${MAX_STATIC_MESSAGE_BUTTONS} antes de salvar (limite da API do WhatsApp).`
+        violation.reason === "list"
+          ? `O bloco "${label}" tem mais de ${MAX_STATIC_MESSAGE_LIST_ITEMS} itens na lista. Reduza para no máximo ${MAX_STATIC_MESSAGE_LIST_ITEMS} antes de salvar (limite da API do WhatsApp).`
+          : `O bloco "${label}" tem mais de ${MAX_STATIC_MESSAGE_BUTTONS} botões. Reduza para no máximo ${MAX_STATIC_MESSAGE_BUTTONS} antes de salvar (limite da API do WhatsApp).`
       );
       return;
     }
@@ -329,6 +358,10 @@ function FlowBuilderInner({
                 Salvo às {savedAt.toLocaleTimeString("pt-BR")}
               </span>
             )}
+            <Button variant="outline" size="sm" onClick={handleLoadBeautySalonTemplate}>
+              <Sparkles className="h-3.5 w-3.5" />
+              Carregar Template: Salão de Beleza
+            </Button>
             <Button variant={active ? "default" : "outline"} size="sm" onClick={() => setActive((v) => !v)}>
               {active ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
               {active ? "Ativo" : "Inativo"}
