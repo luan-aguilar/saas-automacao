@@ -9,6 +9,13 @@ import { getConnectionState, fetchInstancePhoneNumber } from "@/lib/evolution-ap
  * `/instance/connectionState/{instanceName}` na Evolution API e sincronizamos
  * o resultado no banco, para que o badge da tela /whatsapp mude para
  * "Conectado" assim que o pareamento for concluído.
+ *
+ * `getConnectionState` trata um 404 da Evolution API (instância sem nenhuma
+ * chave de sessão ativa do Baileys — ex: apagada numa desconexão anterior)
+ * como `"close"`, então o branch abaixo já corrige sozinho qualquer registro
+ * que tenha ficado com `status: "CONNECTED"` desatualizado — inclusive o que
+ * alimenta a lista de clientes do MASTER (`/clients`), já que ela lê o mesmo
+ * campo `WhatsappConnection.status` gravado aqui.
  */
 export async function GET() {
   const session = await auth();

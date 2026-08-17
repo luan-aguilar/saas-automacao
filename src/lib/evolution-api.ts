@@ -9,7 +9,15 @@
  * `WhatsappConnection.externalSessionId`.
  */
 
-export class EvolutionApiError extends Error {}
+export class EvolutionApiError extends Error {
+  /** Status HTTP da resposta da Evolution API, quando disponível (ex: 404 = instância não existe). */
+  status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.status = status;
+  }
+}
 
 function getEvolutionConfig(): { baseUrl: string; apiKey: string } {
   const baseUrl = process.env.WHATSAPP_SERVICE_URL;
@@ -64,7 +72,7 @@ async function evolutionFetch(path: string, init?: RequestInit) {
     const message = Array.isArray(messageField)
       ? messageField.join(", ")
       : (messageField as string | undefined) ?? raw ?? `HTTP ${response.status}`;
-    throw new EvolutionApiError(`Evolution API respondeu ${response.status}: ${message}`);
+    throw new EvolutionApiError(`Evolution API respondeu ${response.status}: ${message}`, response.status);
   }
 
   return json;
@@ -100,41 +108,56 @@ function extractQr(data: unknown): EvolutionQrResult {
 }
 
 /**
- * Cria a instância na Evolution API. Se ela já existir (usuário clicou em
- * "Conectar" mais de uma vez), busca um novo QR Code para a instância
- * existente via `/instance/connect/{instanceName}`.
+ * Cria a instância do zero na Evolution API e retorna o QR Code gerado.
+ *
+ * Deliberadamente NÃO faz fallback para `/instance/connect/{instanceName}`
+ * quando a criação falha (ex: "instância já existe") — esse fallback antigo
+ * escondia um bug real: se a instância anterior ainda estivesse de fato
+ * conectada na VPS (ex: uma desconexão anterior não foi bem-sucedida),
+ * `/instance/connect` simplesmente reaproveitava a sessão já aberta e não
+ * devolvia QR Code nenhum, fazendo a tela "Conectar" parecer travada e o
+ * polling de status revalidar como "Conectado" logo em seguida.
+ *
+ * Por isso o chamador (`POST /api/whatsapp/connect`) deve sempre chamar
+ * `deleteInstance(instanceName)` antes desta função, para garantir uma
+ * criação limpa. Se ainda assim a criação falhar, o erro é propagado — é
+ * melhor reportar isso claramente do que fingir sucesso reaproveitando uma
+ * sessão desatualizada.
  */
-export async function createOrConnectInstance(instanceName: string): Promise<EvolutionQrResult> {
-  try {
-    const created = await evolutionFetch("/instance/create", {
-      method: "POST",
-      body: JSON.stringify({
-        instanceName,
-        qrcode: true,
-        integration: "WHATSAPP-BAILEYS",
-      }),
-    });
+export async function createInstance(instanceName: string): Promise<EvolutionQrResult> {
+  const created = await evolutionFetch("/instance/create", {
+    method: "POST",
+    body: JSON.stringify({
+      instanceName,
+      qrcode: true,
+      integration: "WHATSAPP-BAILEYS",
+    }),
+  });
 
-    const qr = extractQr(created);
-    if (qr.base64) return qr;
-    // Instância criada mas a resposta não trouxe o QR embutido — busca explicitamente abaixo.
-  } catch (error) {
-    // Provavelmente a instância já existe (Evolution retorna 403/409 nesse caso).
-    // Nesses casos seguimos para buscar um QR novo na instância existente.
-    if (!(error instanceof EvolutionApiError)) throw error;
-  }
-
-  const connected = await evolutionFetch(`/instance/connect/${instanceName}`, { method: "GET" });
-  return extractQr(connected);
+  return extractQr(created);
 }
 
 export type EvolutionConnectionState = "open" | "connecting" | "close" | "unknown";
 
-/** Consulta o estado atual da instância (`open` = conectado, `close` = desconectado). */
+/**
+ * Consulta o estado atual da instância (`open` = conectado, `close` =
+ * desconectado/sem sessão). Se a Evolution API responder 404 (instância não
+ * existe mais — ex: foi apagada em uma desconexão anterior), tratamos isso
+ * como `"close"`: não há nenhuma chave de sessão ativa do Baileys para esse
+ * tenant, então do ponto de vista do app é exatamente o mesmo que "fechado".
+ * Outros erros (rede, 5xx) continuam sendo propagados, para o chamador poder
+ * distinguir "sem sessão" de "Evolution API instável agora".
+ */
 export async function getConnectionState(instanceName: string): Promise<EvolutionConnectionState> {
-  const data = (await evolutionFetch(`/instance/connectionState/${instanceName}`, {
-    method: "GET",
-  })) as { instance?: { state?: string }; state?: string } | null;
+  let data: { instance?: { state?: string }; state?: string } | null;
+  try {
+    data = (await evolutionFetch(`/instance/connectionState/${instanceName}`, {
+      method: "GET",
+    })) as { instance?: { state?: string }; state?: string } | null;
+  } catch (error) {
+    if (error instanceof EvolutionApiError && error.status === 404) return "close";
+    throw error;
+  }
 
   const state = data?.instance?.state ?? data?.state;
   if (state === "open" || state === "connecting" || state === "close") return state;
@@ -274,8 +297,7 @@ export async function logoutInstance(instanceName: string): Promise<void> {
  * credenciais/tokens de sessão salvos (auth state do Baileys). Ao contrário
  * de `logoutInstance`, isso impede que a instância se reconecte sozinha,
  * pois não sobra nenhuma sessão em cache para reutilizar — a próxima conexão
- * exige um novo QR Code do zero (via `createOrConnectInstance`, que já lida
- * com recriar a instância se ela não existir mais).
+ * exige um novo QR Code do zero (via `createInstance`).
  */
 export async function deleteInstance(instanceName: string): Promise<void> {
   await evolutionFetch(`/instance/delete/${instanceName}`, { method: "DELETE" });

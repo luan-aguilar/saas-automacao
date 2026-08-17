@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { createOrConnectInstance, deleteInstance, instanceNameFor, setWebhook } from "@/lib/evolution-api";
+import { createInstance, deleteInstance, instanceNameFor, setWebhook } from "@/lib/evolution-api";
 
 /** Monta a URL pública do webhook de mensagens, autenticada por token na query string. */
 function webhookUrlFor(): string | null {
@@ -15,9 +15,12 @@ function webhookUrlFor(): string | null {
  * POST /api/whatsapp/connect — dispara o pareamento real via Evolution API v2.
  *
  * 1. Marca a conexão como "CONNECTING" imediatamente (feedback rápido na UI).
- * 2. Cria a instância na Evolution API (ou reaproveita uma existente e pede
- *    um novo QR Code via /instance/connect/{instanceName}).
- * 3. Salva o QR Code (base64) retornado no banco, para a tela /whatsapp
+ * 2. Expurga preventivamente qualquer instância antiga com este nome
+ *    (`deleteInstance`, melhor esforço) — garante que a criação abaixo parta
+ *    sempre de um estado limpo, sem depender de nenhuma sessão anterior.
+ * 3. Cria a instância do zero (`createInstance`) e exige um QR Code válido na
+ *    resposta — sem fallback silencioso para uma sessão pré-existente.
+ * 4. Salva o QR Code (base64) retornado no banco, para a tela /whatsapp
  *    exibi-lo via polling em GET /api/whatsapp/status.
  */
 export async function POST() {
@@ -39,7 +42,7 @@ export async function POST() {
   // (ex: credenciais órfãs de uma desconexão anterior mal-sucedida) pode
   // impedir um QR Code novo de ser gerado ou causar reconexão automática
   // indesejada. Melhor esforço — se a instância não existir, a Evolution API
-  // simplesmente responde com erro e seguimos para criar normalmente.
+  // simplesmente responde com erro (ignorado) e seguimos para criar normalmente.
   try {
     await deleteInstance(instanceName);
   } catch (error) {
@@ -50,7 +53,7 @@ export async function POST() {
   }
 
   try {
-    const { base64 } = await createOrConnectInstance(instanceName);
+    const { base64 } = await createInstance(instanceName);
 
     if (!base64) {
       await prisma.whatsappConnection.update({
