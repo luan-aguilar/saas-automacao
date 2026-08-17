@@ -8,66 +8,131 @@
  * e conectada normalmente ao WhatsApp do tenant (mesmo fluxo de
  * salvar/ativar usado por qualquer outro fluxo).
  *
- * Fluxo modelado:
- *   TRIGGER (primeira mensagem)
- *     -> NO_1 Boas-vindas (botões: Ver Serviços/Preços | Endereço e Horários | Falar com Atendente)
- *       -> [Ver Serviços/Preços] NO_2 Lista de categorias (Cabelo | Unhas | Cílios | Sobrancelhas)
- *            -> [Cabelo] NO_3 Sondagem/pré-avaliação -> NO_4 Agente de coleta (IA)
- *            -> [demais categorias] NO_4 Agente de coleta (IA) diretamente
- *              -> NO_5 Notificação de lead qualificado para o dono do salão
- *       -> [Endereço e Horários] mensagem com endereço/horário de atendimento
- *       -> [Falar com Atendente] mensagem de transferência + alerta para o salão
+ * ---------------------------------------------------------------------------
+ * DIVISÃO DE RESPONSABILIDADES (importante para quem for editar este arquivo)
+ * ---------------------------------------------------------------------------
+ * O fluxo é deliberadamente dividido em duas camadas bem separadas:
  *
- * O roteamento por opção escolhida usa blocos de Condição (`condition`)
- * avaliando a variável `ultima_resposta` (resposta mais recente do contato)
- * — o mesmo padrão já usado no restante do Construtor de Fluxos.
+ * 1) NÓ DE LISTA (WhatsApp, `bs-categorias`) — a ÚNICA interface "clicável"
+ *    do fluxo. Mostra exclusivamente as 4 categorias principais + a opção
+ *    "Informações e Endereço" (5 itens no total). Ele NÃO lista sub-serviços
+ *    — isso é proposital, pois a API de lista do WhatsApp tem espaço/
+ *    caracteres limitados e o catálogo completo (com dezenas de sub-serviços
+ *    por categoria) não caberia de forma legível em botões/lista.
+ *
+ * 2) NÓ DE IA (`bs-ia-coleta`) — assume a conversa em texto corrido assim que
+ *    a cliente escolhe uma categoria na lista. É o `customPrompt` deste nó
+ *    (constante `AI_COLLECTION_PROMPT` abaixo) que contém o catálogo
+ *    completo de sub-serviços, as informações gerais do salão e as regras de
+ *    interação (múltiplos serviços, coleta/validação de fotos, navegação
+ *    "Voltar", confirmação obrigatória antes de notificar o salão).
+ *
+ * TRIGGER (primeira mensagem)
+ *   -> NO_1 Lista de categorias (Cabelo | Unhas | Cílios | Sobrancelhas | Informações e Endereço)
+ *        -> [Informações e Endereço] mensagem estática com endereço/horários/avaliação gratuita
+ *        -> [qualquer categoria de serviço] NO_IA Agente de coleta (texto fluido, catálogo completo)
+ *             -> NO_ALERTA Notificação de lead qualificado para o dono do salão
+ *
+ * O roteamento da escolha da lista usa um bloco de Condição (`condition`)
+ * avaliando a variável `ultima_resposta` (resposta/título selecionado mais
+ * recente do contato) — o mesmo padrão já usado no restante do Construtor de
+ * Fluxos.
  */
 
 import type { Node, Edge } from "@xyflow/react";
 
 export const BEAUTY_SALON_TEMPLATE_NAME = "Salão de Beleza / Estética — Home Concept";
 
-const SALON_ADDRESS = "Alameda São Caetano, 71 – Bairro Jardim, Santo André/SP";
-const SALON_HOURS = "Terça a Sábado, das 09h às 18h";
+const SALON_ADDRESS = "Home Concept - Alameda São Caetano, 71 – Bairro Jardim, Santo André/SP";
+const SALON_HOURS = "Terça a sábado, das 09h às 18h (exceto feriados)";
 
 /**
  * Mensagem de notificação de lead qualificado enviada para o número do dono
- * do salão (bloco NO_5). Formato exigido — não alterar o texto/emoji sem
- * necessidade, pois é o modelo acordado com o cliente.
+ * do salão (nó de alerta final). Formato exigido — não alterar o
+ * texto/emoji/ordem dos campos sem necessidade, pois é o modelo acordado com
+ * o cliente. Inclui os links das fotos coletadas pela IA (quando aplicável).
  */
 const LEAD_NOTIFICATION_MESSAGE = `🔥 *NOVO LEAD QUALIFICADO* 🔥
 📅 *Data:* {{data_atual}}
 👤 *Nome:* {{lead_nome}}
 📱 *WhatsApp:* {{lead_phone}}
 🏢 *Serviço procurado:* {{servico_categoria}}
-👥 *Subtipo do serviço:* {{servico_subtipo}}
+👥 *Subtipo(s) do serviço:* {{servico_subtipo}}
 ⏰ *Agendamento solicitado:* {{data_hora_agendamento}}
-🎯 *Resumo do atendimento:* {{resumo_ia}}`;
+📸 *Foto Cabelo Atual:* {{foto_atual_url}}
+📸 *Foto Referência:* {{foto_referencia_url}}
+🎯 *Resumo do Atendimento:* {{resumo_ia}}`;
 
-/** System prompt do bloco "Agente de Coleta" (NO_4, Resposta IA). */
-const AI_COLLECTION_PROMPT = `Você é a assistente virtual do salão de beleza/estética Home Concept. Sua função nesta etapa da conversa é conduzir uma coleta de informações amigável e objetiva com a cliente, sem inventar preços ou disponibilidade. Siga estes passos, adaptando-se ao ritmo da conversa:
+/**
+ * System prompt do "Agente de Coleta" (nó de Resposta IA). Assume a conversa
+ * em texto corrido assim que a cliente escolhe uma categoria na lista do
+ * WhatsApp — é aqui, e não na interface de botões/lista, que vive o catálogo
+ * completo de sub-serviços e as regras de atendimento.
+ */
+const AI_COLLECTION_PROMPT = `Você é a assistente virtual do salão de beleza/estética Home Concept. A cliente acabou de escolher uma categoria de serviço em uma lista do WhatsApp (Cabelo, Unhas, Cílios ou Sobrancelhas). A partir daqui, VOCÊ assume a conversa inteiramente por texto corrido: apresente os sub-serviços da categoria escolhida (usando o catálogo abaixo) para a cliente escolher, e conduza toda a coleta de informações necessárias para o agendamento.
 
-1. Identifique o nome da cliente (pergunte educadamente se ainda não souber).
-2. Confirme se ela deseja agendar mais de um serviço na mesma visita.
-3. Colete a preferência de dia e horário para o agendamento, lembrando que o atendimento funciona de ${SALON_HOURS}.
-4. Informe o endereço do salão quando for pertinente: ${SALON_ADDRESS}.
+=====================================================
+CATÁLOGO COMPLETO DE SUB-SERVIÇOS (use exatamente estas opções — não invente novas)
+=====================================================
 
-Seja calorosa, use poucos emojis e mantenha as mensagens curtas. Ao final, resuma o que foi coletado para confirmar com a cliente antes de encerrar esta etapa.`;
+💇‍♀️ CABELO:
+Avaliação para Mechas, Avaliação para Mega Hair, Mechas, Mega Hair, Hair Contour, Coloração, Botox Capilar, Progressiva, Detox Capilar, Corte, Escova, Babyliss, Tratamentos e Cronogramas Capilares, Nutrição, Hidratação, Matização, Plástica dos Fios, Selagem, Ozonioterapia Capilar, Decapagem, Tonalização, Maquiagem, Penteado, Outros.
 
-function textNode(
-  id: string,
-  position: { x: number; y: number },
-  label: string,
-  message: string,
-  buttons: string[] = []
-): Node {
-  return {
-    id,
-    type: "staticMessage",
-    position,
-    data: { label, message, interactiveType: "buttons", buttons },
-  };
-}
+💅 UNHAS:
+Manicure, Pedicure, Alongamento em Gel, Alongamento em Fibra, Manutenção (15 a 20 dias), Manutenção (acima de 30 dias), Banho de Gel, Blindagem das Mãos, Blindagem dos Pés, Decoração (mãos ou pés), Esmaltação em Gel (mãos), Esmaltação em Gel (pés), Esmaltação Tradicional, Colocação de Unhas Postiças, Spa dos Pés, Outros.
+
+👁️ CÍLIOS:
+Extensão de Cílios – Técnica Fox Eyes, Extensão de Cílios – Demais técnicas, Manutenção – Técnica Fox Eyes, Manutenção – Demais técnicas, Outros.
+
+✏️ SOBRANCELHAS:
+Brow Lamination, Dermaplaning, Design com Henna, Epilação de Buço, Hydra Gloss, Lash Lifting, Natural Design, Outros.
+
+ℹ️ INFORMAÇÕES GERAIS (use se a cliente perguntar, mesmo dentro do fluxo de coleta):
+- Horários: ${SALON_HOURS}.
+- Avaliação: Gratuita.
+- Endereço: ${SALON_ADDRESS}.
+
+=====================================================
+REGRAS DE INTERAÇÃO (seja resiliente e à prova de erros — a cliente pode responder de forma inesperada a qualquer momento)
+=====================================================
+
+a) Múltiplos serviços:
+Entenda se a cliente deseja agendar mais de um serviço (ex: "Quero fazer Corte e Manicure") e registre todos os serviços/subtipos mencionados, mesmo que sejam de categorias diferentes.
+
+b) Coleta e validação inteligente de fotos:
+- Se algum serviço escolhido envolver Cabelo (Mechas, Mega Hair, Progressiva, Hair Contour, Coloração, Botox Capilar, etc.): peça uma foto do cabelo atual da cliente e, se ela tiver, uma foto de referência do resultado desejado.
+- Se a cliente enviar 1 foto, analise a URL recebida, agradeça e pergunte se ela também tem uma foto de referência.
+- Se ela disser que só tem 1 foto (ou nenhuma foto de referência), aceite e prossiga normalmente — não insista.
+- Se ela disser que não tem nem a foto do próprio cabelo, oriente rapidamente como tirar uma boa foto (boa luz, cabelo solto, de frente e de perfil) e aguarde o envio sem fechar ou abandonar o fluxo.
+- Salve os links das imagens recebidas nas variáveis \`foto_atual_url\` e \`foto_referencia_url\`. Se alguma delas não for enviada, preencha o valor como "Não enviada" (nunca deixe em branco).
+- Serviços que não envolvem cabelo (Unhas, Cílios, Sobrancelhas) não exigem fotos — não peça.
+
+c) Navegação e botão "Voltar":
+Se a cliente digitar "Voltar", "Menu", "Voltar ao menu" ou indicar de qualquer forma que clicou na categoria errada ou quer trocar de assunto, oriente-a gentilmente e reapresente as opções principais em texto (as mesmas 4 categorias + Informações e Endereço), permitindo que ela escolha de novo por texto.
+
+d) Confirmação obrigatória dos dados:
+ANTES de disparar a notificação final para o salão, você DEVE exibir esta mensagem de confirmação (preenchendo os colchetes com os dados já coletados) e aguardar a resposta da cliente:
+
+"Maravilhosa, podemos confirmar os dados do seu agendamento? 🤩
+
+• Nome: [Nome do cliente]
+• Serviço(s): [Serviço e subtipo selecionados]
+• Preferência de Dia/Horário: [Dia e horário informados]
+
+Está tudo certinho ou gostaria de alterar algo?"
+
+Somente após um "Sim" / "Tudo certo" (ou equivalente) da cliente você deve considerar a coleta concluída e acionar a notificação final para o salão (bloco de alerta). Se a cliente pedir para alterar algo, corrija o dado indicado e repita a confirmação antes de prosseguir.
+
+=====================================================
+RESUMO DO QUE VOCÊ PRECISA GARANTIR AO FINAL DA COLETA
+=====================================================
+- Nome da cliente.
+- Categoria(s) e subtipo(s) de serviço escolhidos (podendo ser mais de um).
+- Preferência de dia e horário, respeitando o funcionamento (${SALON_HOURS}).
+- Fotos (quando aplicável a Cabelo), com \`foto_atual_url\` e \`foto_referencia_url\` preenchidas (ou "Não enviada").
+- Confirmação explícita da cliente sobre os dados coletados (regra "d" acima).
+
+Seja calorosa, use poucos emojis e mantenha as mensagens curtas e fáceis de responder pelo celular.`;
 
 function conditionNode(
   id: string,
@@ -104,98 +169,71 @@ const NODES: Node[] = [
   {
     id: "bs-trigger",
     type: "trigger",
-    position: { x: 520, y: 0 },
+    position: { x: 480, y: 0 },
     data: { label: "Primeira mensagem", triggerType: "FIRST_MESSAGE" },
   },
 
-  // NO_1 — Boas-vindas + botões.
-  textNode(
-    "bs-welcome",
-    { x: 480, y: 160 },
-    "Boas-vindas",
-    "Olá, maravilhosa! 🤩 Seja bem-vinda ao Home Concept. Como posso te ajudar hoje?",
-    ["Ver Serviços/Preços", "Endereço e Horários", "Falar com Atendente"]
-  ),
-
-  // Roteamento da escolha de NO_1.
-  conditionNode("bs-cond-servicos", { x: 480, y: 340 }, "Escolheu Ver Serviços/Preços?", "Serviços"),
-
-  // NO_2 — List Message com as categorias de serviço.
+  // NO_1 — ÚNICA interface de botões/lista do WhatsApp neste fluxo: mostra
+  // apenas as 4 categorias principais + "Informações e Endereço" (5 itens).
+  // O catálogo completo de sub-serviços NÃO fica aqui — fica no prompt da IA
+  // (nó `bs-ia-coleta`), que assume a conversa em texto corrido.
   {
     id: "bs-categorias",
     type: "staticMessage",
-    position: { x: 140, y: 520 },
+    position: { x: 480, y: 160 },
     data: {
-      label: "Categorias de serviço",
+      label: "Categorias (Lista WhatsApp)",
       message:
-        "Perfeito! 💇‍♀️ Aqui estão nossas categorias de serviços. Escolha uma opção abaixo para ver mais detalhes:",
+        "Olá, maravilhosa! 🤩 Seja bem-vinda ao Home Concept! Escolha abaixo a categoria de serviço que você procura:",
       interactiveType: "list",
       buttons: [],
-      listButtonText: "Ver Opções de Serviços",
+      listButtonText: "Ver Categorias",
       listItems: [
-        { id: "cabelo", title: "Cabelo", description: "Mechas, Mega Hair, Progressiva, Corte, Tratamentos..." },
-        { id: "unhas", title: "Unhas", description: "Manicure, Alongamento Gel/Fibra, Banho de Gel..." },
-        { id: "cilios", title: "Cílios", description: "Extensão Fox Eyes, Lash Lifting..." },
-        { id: "sobrancelhas", title: "Sobrancelhas", description: "Brow Lamination, Design com Henna..." },
+        { id: "cabelo", title: "💇‍♀️ Cabelo", description: "Mechas, Mega Hair, Progressiva, Corte e mais" },
+        { id: "unhas", title: "💅 Unhas", description: "Manicure, Pedicure, Alongamento e mais" },
+        { id: "cilios", title: "👁️ Cílios", description: "Extensão Fox Eyes, Manutenção e mais" },
+        { id: "sobrancelhas", title: "✏️ Sobrancelhas", description: "Design, Henna, Lash Lifting e mais" },
+        { id: "informacoes", title: "ℹ️ Informações e Endereço", description: "Horários, avaliação e localização" },
       ],
     },
   },
 
-  // Ramo "Endereço e Horários".
-  conditionNode("bs-cond-endereco", { x: 800, y: 520 }, "Escolheu Endereço e Horários?", "Endereço"),
-  textNode(
-    "bs-endereco-msg",
-    { x: 800, y: 700 },
-    "Endereço e horários",
-    `📍 Estamos na ${SALON_ADDRESS}.\n\n🕐 Horário de atendimento: ${SALON_HOURS}.\n\nSe quiser, posso te ajudar a agendar um horário agora mesmo! 😉`
-  ),
+  // Roteamento da escolha de NO_1: "Informações e Endereço" é a única opção
+  // respondida sem envolver a IA — as outras 4 (categorias de serviço) vão
+  // direto para o Agente de coleta em texto.
+  conditionNode("bs-cond-informacoes", { x: 480, y: 340 }, "Escolheu Informações e Endereço?", "Informações"),
 
-  // Ramo "Falar com Atendente" (o que sobrar depois de descartar Serviços/Endereço).
-  textNode(
-    "bs-transfer-msg",
-    { x: 1080, y: 700 },
-    "Transferência para atendente",
-    "Só um instantinho! 💬 Já vou te conectar com uma de nossas atendentes."
-  ),
+  // Ramo "Informações e Endereço".
   {
-    id: "bs-transfer-alert",
-    type: "alertNotification",
-    position: { x: 1080, y: 880 },
+    id: "bs-info-msg",
+    type: "staticMessage",
+    position: { x: 760, y: 520 },
     data: {
-      label: "Alerta: atendimento humano solicitado",
-      recipientPhone: "",
-      message: "🙋 *Cliente pediu atendimento humano*\n📱 *WhatsApp:* {{lead_phone}}\n🕐 *Horário:* {{data_atual}}",
+      label: "Informações e Endereço",
+      message: `📍 ${SALON_ADDRESS}\n\n🕐 Horário de atendimento: ${SALON_HOURS}.\n\n✅ A avaliação é gratuita! Se quiser, posso te ajudar a agendar um horário agora mesmo. 😉`,
+      interactiveType: "buttons",
+      buttons: [],
     },
   },
 
-  // Ramo "Cabelo": pré-avaliação antes do agente de coleta.
-  conditionNode("bs-cond-cabelo", { x: 140, y: 700 }, "Escolheu a categoria Cabelo?", "Cabelo"),
-
-  // NO_3 — Sondagem e pré-avaliação (Cabelo/Progressiva).
-  textNode(
-    "bs-pre-avaliacao",
-    { x: -40, y: 880 },
-    "Pré-avaliação (Cabelo)",
-    "Maravilhosa! 🤩 Antes de passar valores, realizamos uma pré-avaliação gratuita. Seu cabelo possui alguma química (coloração, descoloração, progressiva, selagem, botox)? Para eu te orientar certinho, envie por aqui uma foto do seu cabelo atual e, se tiver, uma foto de referência do resultado que você deseja. 📸"
-  ),
-
-  // NO_4 — Agente de coleta (Resposta IA).
+  // NO_IA — Agente de coleta (Resposta IA). Assume a conversa por texto
+  // corrido assim que a cliente escolhe uma categoria de serviço na lista.
   {
     id: "bs-ia-coleta",
     type: "aiResponse",
-    position: { x: 300, y: 1060 },
+    position: { x: 200, y: 520 },
     data: {
-      label: "Agente de coleta (IA)",
+      label: "Agente de coleta (IA) — catálogo completo",
       useGlobalPrompt: false,
       customPrompt: AI_COLLECTION_PROMPT,
     },
   },
 
-  // NO_5 — Notificação do lead qualificado para o dono do salão.
+  // NO_ALERTA — Notificação do lead qualificado para o dono do salão.
   {
     id: "bs-lead-alert",
     type: "alertNotification",
-    position: { x: 300, y: 1240 },
+    position: { x: 200, y: 700 },
     data: {
       label: "Notificação: novo lead qualificado",
       recipientPhone: "",
@@ -205,24 +243,13 @@ const NODES: Node[] = [
 ];
 
 const EDGES: Edge[] = [
-  edge("bs-e-trigger-welcome", "bs-trigger", "bs-welcome"),
-  edge("bs-e-welcome-cond-servicos", "bs-welcome", "bs-cond-servicos"),
+  edge("bs-e-trigger-categorias", "bs-trigger", "bs-categorias"),
+  edge("bs-e-categorias-cond-informacoes", "bs-categorias", "bs-cond-informacoes"),
 
-  // "Ver Serviços/Preços" -> lista de categorias.
-  edge("bs-e-cond-servicos-yes", "bs-cond-servicos", "bs-categorias", "yes"),
-  // Caso contrário, verifica se foi "Endereço e Horários".
-  edge("bs-e-cond-servicos-no", "bs-cond-servicos", "bs-cond-endereco", "no"),
-
-  edge("bs-e-cond-endereco-yes", "bs-cond-endereco", "bs-endereco-msg", "yes"),
-  // Última opção restante: "Falar com Atendente".
-  edge("bs-e-cond-endereco-no", "bs-cond-endereco", "bs-transfer-msg", "no"),
-  edge("bs-e-transfer-msg-alert", "bs-transfer-msg", "bs-transfer-alert"),
-
-  // Categorias -> verifica se é "Cabelo" (única com pré-avaliação dedicada).
-  edge("bs-e-categorias-cond-cabelo", "bs-categorias", "bs-cond-cabelo"),
-  edge("bs-e-cond-cabelo-yes", "bs-cond-cabelo", "bs-pre-avaliacao", "yes"),
-  edge("bs-e-cond-cabelo-no", "bs-cond-cabelo", "bs-ia-coleta", "no"),
-  edge("bs-e-pre-avaliacao-ia", "bs-pre-avaliacao", "bs-ia-coleta"),
+  // "Informações e Endereço" -> mensagem estática (fim do fluxo).
+  edge("bs-e-cond-informacoes-yes", "bs-cond-informacoes", "bs-info-msg", "yes"),
+  // Qualquer categoria de serviço -> Agente de coleta (IA).
+  edge("bs-e-cond-informacoes-no", "bs-cond-informacoes", "bs-ia-coleta", "no"),
 
   edge("bs-e-ia-coleta-alert", "bs-ia-coleta", "bs-lead-alert"),
 ];
