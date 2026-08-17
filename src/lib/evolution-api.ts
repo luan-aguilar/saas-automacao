@@ -46,13 +46,12 @@ async function evolutionFetch(path: string, init?: RequestInit) {
       ...init,
       headers: {
         "Content-Type": "application/json",
-        // Envia a chave em todas as variações de header aceitas por diferentes
-        // versões/forks da Evolution API v2 — `apikey`/`apiKey` colapsam no
-        // mesmo header HTTP (nomes são case-insensitive), mas `Authentication`
-        // é um header à parte, então isso cobre ambos os esquemas de fato.
+        // Header oficial da Global API Key da Evolution API v2 — é o único
+        // que ela espera para autenticação de gerenciamento de instância.
+        // NÃO adicionar `Authentication: Bearer` aqui: a Evolution API tenta
+        // validar esse header como um JWT de instância (não a chave global),
+        // e responde 401 Unauthorized quando ele não é um JWT válido.
         apikey: apiKey,
-        apiKey: apiKey,
-        Authentication: `Bearer ${apiKey}`,
         ...(init?.headers ?? {}),
       },
       cache: "no-store",
