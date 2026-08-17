@@ -37,8 +37,21 @@ export function instanceNameFor(userId: string): string {
   return `tenant_${userId}`.toLowerCase().replace(/[^a-z0-9_]/g, "");
 }
 
+/**
+ * Timeout estrito para qualquer chamada à Evolution API. A VPS pode ficar
+ * lenta ou travada (ex: instância presa reconectando) e, sem isso, uma
+ * requisição de gerenciamento (logout/delete) podia ficar pendente por muito
+ * tempo, segurando a resposta da rota e deixando a UI travada em estados
+ * como "Desconectando...". 4s é suficiente para uma VPS saudável responder e
+ * curto o bastante para nunca travar a experiência do usuário.
+ */
+const EVOLUTION_TIMEOUT_MS = 4000;
+
 async function evolutionFetch(path: string, init?: RequestInit) {
   const { baseUrl, apiKey } = getEvolutionConfig();
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EVOLUTION_TIMEOUT_MS);
 
   let response: Response;
   try {
@@ -55,10 +68,18 @@ async function evolutionFetch(path: string, init?: RequestInit) {
         ...(init?.headers ?? {}),
       },
       cache: "no-store",
+      signal: controller.signal,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Erro de rede desconhecido";
+    const isTimeout = error instanceof Error && error.name === "AbortError";
+    const message = isTimeout
+      ? `Evolution API não respondeu em ${EVOLUTION_TIMEOUT_MS}ms (timeout).`
+      : error instanceof Error
+        ? error.message
+        : "Erro de rede desconhecido";
     throw new EvolutionApiError(`Não foi possível conectar à Evolution API (${message}).`);
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   const raw = await response.text();

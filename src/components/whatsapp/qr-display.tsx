@@ -82,23 +82,30 @@ export function QrDisplay({ initial }: { initial: StatusResponse }) {
     setDisconnecting(true);
     setError(null);
 
-    const res = await fetch("/api/whatsapp/disconnect", { method: "POST" });
+    // Atualização otimista: a rota de disconnect já é assíncrona e
+    // best-effort do lado da Evolution API (nunca espera a VPS para
+    // responder), então a UI pode assumir "Desconectado" assim que a
+    // requisição terminar — sem depender de um novo fetch de status.
+    try {
+      const res = await fetch("/api/whatsapp/disconnect", { method: "POST" });
 
-    if (res.ok) {
-      // Volta para a tela inicial de geração do QR Code.
-      setData({
-        status: "DISCONNECTED",
-        phoneNumber: null,
-        qrCode: null,
-        qrExpiresAt: null,
-        lastConnectedAt: null,
-      });
-    } else {
-      const body = await res.json().catch(() => ({}));
-      setError(body.error ?? "Não foi possível desconectar o WhatsApp. Tente novamente em instantes.");
+      if (res.ok) {
+        setData({
+          status: "DISCONNECTED",
+          phoneNumber: null,
+          qrCode: null,
+          qrExpiresAt: null,
+          lastConnectedAt: null,
+        });
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error ?? "Não foi possível desconectar o WhatsApp. Tente novamente em instantes.");
+      }
+    } catch {
+      setError("Não foi possível falar com o servidor. Verifique sua conexão e tente novamente.");
+    } finally {
+      setDisconnecting(false);
     }
-
-    setDisconnecting(false);
   }
 
   return (
