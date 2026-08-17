@@ -38,25 +38,37 @@ export function instanceNameFor(userId: string): string {
 }
 
 /**
- * Timeout estrito para qualquer chamada à Evolution API. A VPS pode ficar
- * lenta ou travada (ex: instância presa reconectando) e, sem isso, uma
- * requisição de gerenciamento (logout/delete) podia ficar pendente por muito
- * tempo, segurando a resposta da rota e deixando a UI travada em estados
- * como "Desconectando...". 3s é suficiente para uma VPS saudável responder e
- * curto o bastante para nunca travar a experiência do usuário.
+ * Timeout padrão para chamadas de leitura/criação (status, QR Code, envio de
+ * mensagens, webhook). `/instance/create` em especial pode legitimamente
+ * levar de 5 a 8s para responder na Evolution API v2 — um timeout curto
+ * demais aqui derrubava a geração do QR Code com um falso erro de timeout.
  */
-const EVOLUTION_TIMEOUT_MS = 3000;
+const DEFAULT_TIMEOUT_MS = 10000;
 
-async function evolutionFetch(path: string, init?: RequestInit) {
+/**
+ * Timeout curto, só para as chamadas de desconexão/limpeza (`logoutInstance`,
+ * `deleteInstance`). A VPS pode ficar lenta ou travada nessas operações (ex:
+ * instância presa reconectando) e, sem um teto baixo aqui, isso segurava a
+ * resposta da rota de disconnect e deixava a UI travada em
+ * "Desconectando...". 3s é curto o bastante para nunca travar essa
+ * experiência específica — diferente da criação, aqui um timeout não é grave
+ * (o app já limpa o estado local independentemente do resultado).
+ */
+const CLEANUP_TIMEOUT_MS = 3000;
+
+type EvolutionFetchInit = RequestInit & { timeoutMs?: number };
+
+async function evolutionFetch(path: string, init?: EvolutionFetchInit) {
   const { baseUrl, apiKey } = getEvolutionConfig();
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, headers, ...restInit } = init ?? {};
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), EVOLUTION_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   let response: Response;
   try {
     response = await fetch(`${baseUrl}${path}`, {
-      ...init,
+      ...restInit,
       headers: {
         "Content-Type": "application/json",
         // Header oficial da Global API Key da Evolution API v2 — é o único
@@ -65,7 +77,7 @@ async function evolutionFetch(path: string, init?: RequestInit) {
         // validar esse header como um JWT de instância (não a chave global),
         // e responde 401 Unauthorized quando ele não é um JWT válido.
         apikey: apiKey,
-        ...(init?.headers ?? {}),
+        ...(headers ?? {}),
       },
       cache: "no-store",
       signal: controller.signal,
@@ -73,7 +85,7 @@ async function evolutionFetch(path: string, init?: RequestInit) {
   } catch (error) {
     const isTimeout = error instanceof Error && error.name === "AbortError";
     const message = isTimeout
-      ? `Evolution API não respondeu em ${EVOLUTION_TIMEOUT_MS}ms (timeout).`
+      ? `Evolution API não respondeu em ${timeoutMs}ms (timeout).`
       : error instanceof Error
         ? error.message
         : "Erro de rede desconhecido";
@@ -362,7 +374,7 @@ export async function setWebhook(instanceName: string, webhookUrl: string): Prom
  * `/api/whatsapp/disconnect`).
  */
 export async function logoutInstance(instanceName: string): Promise<void> {
-  await evolutionFetch(`/instance/logout/${instanceName}`, { method: "DELETE" });
+  await evolutionFetch(`/instance/logout/${instanceName}`, { method: "DELETE", timeoutMs: CLEANUP_TIMEOUT_MS });
 }
 
 /**
@@ -373,5 +385,5 @@ export async function logoutInstance(instanceName: string): Promise<void> {
  * exige um novo QR Code do zero (via `createInstance`).
  */
 export async function deleteInstance(instanceName: string): Promise<void> {
-  await evolutionFetch(`/instance/delete/${instanceName}`, { method: "DELETE" });
+  await evolutionFetch(`/instance/delete/${instanceName}`, { method: "DELETE", timeoutMs: CLEANUP_TIMEOUT_MS });
 }
