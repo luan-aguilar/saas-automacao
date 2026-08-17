@@ -174,7 +174,28 @@ export async function sendTextMessage(instanceName: string, phone: string, text:
   });
 }
 
-/** Encerra a sessão da instância na Evolution API (logout do WhatsApp). */
+/**
+ * Encerra a sessão da instância na Evolution API (logout do WhatsApp).
+ *
+ * Importante: isso apenas fecha o socket do Baileys — as credenciais da
+ * sessão (auth state) continuam salvas no storage da Evolution API, então a
+ * instância pode se RECONECTAR SOZINHA automaticamente pouco depois (o
+ * Baileys tenta restabelecer a conexão usando as credenciais em cache). Para
+ * uma desconexão definitiva, use `deleteInstance` também (ver
+ * `/api/whatsapp/disconnect`).
+ */
 export async function logoutInstance(instanceName: string): Promise<void> {
   await evolutionFetch(`/instance/logout/${instanceName}`, { method: "DELETE" });
+}
+
+/**
+ * Apaga a instância por completo na Evolution API, destruindo as
+ * credenciais/tokens de sessão salvos (auth state do Baileys). Ao contrário
+ * de `logoutInstance`, isso impede que a instância se reconecte sozinha,
+ * pois não sobra nenhuma sessão em cache para reutilizar — a próxima conexão
+ * exige um novo QR Code do zero (via `createOrConnectInstance`, que já lida
+ * com recriar a instância se ela não existir mais).
+ */
+export async function deleteInstance(instanceName: string): Promise<void> {
+  await evolutionFetch(`/instance/delete/${instanceName}`, { method: "DELETE" });
 }
