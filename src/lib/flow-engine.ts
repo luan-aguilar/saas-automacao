@@ -320,24 +320,33 @@ async function logInboundMessageAndGetChat(
  * `Flow` ativo a partir do node atual, executando cada node até pausar
  * (`WAITING_INPUT`) ou terminar o fluxo (`COMPLETED`).
  *
- * Antes de tudo, registra a mensagem recebida na Central de Atendimento
- * (`Chat`/`Message`) e verifica `Chat.aiEnabled`: se um operador pausou a IA
- * para este contato (intervenção manual), a mensagem fica salva no histórico
- * mas o motor não avança o fluxo nem dispara nenhuma resposta automática.
+ * Antes de tudo — SEMPRE, independente de o tenant ter um fluxo ativo ou
+ * não — registra a mensagem recebida na Central de Atendimento
+ * (`Chat`/`Message`), para ela nunca deixar de aparecer em `/chat`. Só depois
+ * disso verifica se há um `Flow` ativo (`flow: null` = sem automação
+ * configurada, encerra aqui) e `Chat.aiEnabled` (operador pausou a IA para
+ * este contato — a mensagem fica salva no histórico, mas o motor não avança
+ * o fluxo nem dispara nenhuma resposta automática).
  */
 export async function processIncomingMessage(params: {
   userId: string;
-  flow: { id: string; nodes: unknown; edges: unknown };
+  flow: { id: string; nodes: unknown; edges: unknown } | null;
   contactPhone: string;
   contactName?: string;
   messageText: string;
 }): Promise<void> {
   const { userId, flow, contactPhone, contactName, messageText } = params;
-  const nodes = (flow.nodes as FlowNode[]) ?? [];
-  const edges = (flow.edges as FlowGraphEdge[]) ?? [];
 
   const effectiveText = messageText || "[mensagem sem texto reconhecível]";
   const chat = await logInboundMessageAndGetChat(userId, contactPhone, contactName, effectiveText);
+
+  if (!flow) {
+    console.log(
+      "[flow-engine] Tenant sem fluxo ativo — mensagem registrada na Central de Atendimento, sem automação:",
+      { userId, contactPhone }
+    );
+    return;
+  }
 
   if (!chat.aiEnabled) {
     console.log(
@@ -346,6 +355,9 @@ export async function processIncomingMessage(params: {
     );
     return;
   }
+
+  const nodes = (flow.nodes as FlowNode[]) ?? [];
+  const edges = (flow.edges as FlowGraphEdge[]) ?? [];
 
   let session = await prisma.flowSession.findUnique({
     where: { userId_contactPhone: { userId, contactPhone } },

@@ -124,8 +124,21 @@ function extractQr(data: unknown): EvolutionQrResult {
   return { base64, pairingCode: qr.pairingCode ?? null };
 }
 
-/** Eventos assinados no webhook da instância — ver `setWebhook`/`createInstance`. */
-const WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE"];
+/**
+ * Eventos assinados no webhook da instância — ver `setWebhook`/`createInstance`.
+ * Envia tanto o formato minúsculo-com-ponto (usado por algumas versões da
+ * Evolution API v2) quanto o SCREAMING_SNAKE_CASE (usado por outras) para os
+ * mesmos três eventos — a Evolution API ignora os nomes que não reconhece,
+ * então isso cobre as duas variações sem risco de duplicar disparos.
+ */
+const WEBHOOK_EVENTS = [
+  "messages.upsert",
+  "messages.update",
+  "connection.update",
+  "MESSAGES_UPSERT",
+  "MESSAGES_UPDATE",
+  "CONNECTION_UPDATE",
+];
 
 /**
  * Cria a instância do zero na Evolution API e retorna o QR Code gerado.
