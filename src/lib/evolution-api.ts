@@ -46,7 +46,13 @@ async function evolutionFetch(path: string, init?: RequestInit) {
       ...init,
       headers: {
         "Content-Type": "application/json",
+        // Envia a chave em todas as variações de header aceitas por diferentes
+        // versões/forks da Evolution API v2 — `apikey`/`apiKey` colapsam no
+        // mesmo header HTTP (nomes são case-insensitive), mas `Authentication`
+        // é um header à parte, então isso cobre ambos os esquemas de fato.
         apikey: apiKey,
+        apiKey: apiKey,
+        Authentication: `Bearer ${apiKey}`,
         ...(init?.headers ?? {}),
       },
       cache: "no-store",
