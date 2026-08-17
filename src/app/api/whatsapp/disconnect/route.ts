@@ -3,24 +3,26 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { deleteInstance, logoutInstance, instanceNameFor, EvolutionApiError } from "@/lib/evolution-api";
 
-/** Logout + delete na Evolution API, em melhor esforço — nunca lança (erros só são logados). */
+/**
+ * Logout + delete na Evolution API, em melhor esforço e EM PARALELO entre si
+ * (não sequencial) — cada chamada já tem seu próprio timeout de 3s em
+ * `evolutionFetch`, então rodar as duas ao mesmo tempo limita o pior caso
+ * desta função a ~3s (em vez de ~6s se fossem uma depois da outra). Nunca
+ * lança: qualquer erro (403/404/500/timeout) é só logado.
+ */
 async function cleanupEvolutionInstance(instanceName: string): Promise<void> {
-  // 1) Logout "gracioso" — fecha o socket ativo do Baileys, se houver um.
-  try {
-    await logoutInstance(instanceName);
-  } catch (error) {
-    const status = error instanceof EvolutionApiError ? error.status : undefined;
-    console.error(`[whatsapp/disconnect] Falha ao fazer logout na Evolution API (status ${status}):`, error);
-  }
+  const [logoutResult, deleteResult] = await Promise.allSettled([
+    logoutInstance(instanceName), // fecha o socket ativo do Baileys, se houver um
+    deleteInstance(instanceName), // destrói as credenciais salvas, evitando reconexão automática
+  ]);
 
-  // 2) Delete definitivo — destrói as credenciais/token de sessão salvos, o
-  // que é o que efetivamente evita a reconexão automática alguns segundos
-  // depois. Qualquer erro (403/404/500/timeout) é só logado.
-  try {
-    await deleteInstance(instanceName);
-  } catch (error) {
-    const status = error instanceof EvolutionApiError ? error.status : undefined;
-    console.error(`[whatsapp/disconnect] Falha ao apagar a instância na Evolution API (status ${status}):`, error);
+  if (logoutResult.status === "rejected") {
+    const status = logoutResult.reason instanceof EvolutionApiError ? logoutResult.reason.status : undefined;
+    console.error(`[whatsapp/disconnect] Falha ao fazer logout na Evolution API (status ${status}):`, logoutResult.reason);
+  }
+  if (deleteResult.status === "rejected") {
+    const status = deleteResult.reason instanceof EvolutionApiError ? deleteResult.reason.status : undefined;
+    console.error(`[whatsapp/disconnect] Falha ao apagar a instância na Evolution API (status ${status}):`, deleteResult.reason);
   }
 }
 
@@ -35,10 +37,19 @@ async function cleanupEvolutionInstance(instanceName: string): Promise<void> {
  * instância). Por isso a limpeza local (`deleteMany`, o que decide o que a
  * UI mostra) roda em PARALELO com a tentativa de limpeza na VPS — em vez de
  * esperar a VPS responder antes de sequer tocar no banco — e a rota sempre
- * responde 200 assim que as duas terminarem (cada chamada à VPS já tem um
- * timeout próprio de 4s em `evolutionFetch`, então o pior caso é previsível
- * e curto). O SaaS jamais deve deixar o botão "Desconectar" travado
- * esperando a VPS, nem continuar exibindo "Conectado" depois do clique.
+ * responde 200 assim que as duas terminarem. O SaaS jamais deve deixar o
+ * botão "Desconectar" travado esperando a VPS, nem continuar exibindo
+ * "Conectado" depois do clique.
+ *
+ * Nota técnica: o ideal seria disparar a limpeza na VPS sem esperar por ela
+ * (fire-and-forget) e responder assim que `deleteMany` terminasse — mas o
+ * Next.js 14.2.15 usado neste projeto não expõe uma API de "background task"
+ * (o `after()`/`unstable_after` só existe a partir de versões mais novas do
+ * Next.js), e uma função serverless na Vercel pode ser congelada assim que a
+ * resposta é enviada, o que arriscaria a limpeza na VPS nunca rodar de
+ * verdade. Por isso ainda aguardamos as duas coisas juntas — mas como as
+ * chamadas à VPS agora rodam em paralelo entre si e têm timeout de 3s cada
+ * (ver `evolutionFetch`), o pior caso é limitado a ~3s, não mais indefinido.
  */
 export async function POST() {
   const session = await auth();

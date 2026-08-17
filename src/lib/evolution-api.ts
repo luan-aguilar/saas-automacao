@@ -42,10 +42,10 @@ export function instanceNameFor(userId: string): string {
  * lenta ou travada (ex: instância presa reconectando) e, sem isso, uma
  * requisição de gerenciamento (logout/delete) podia ficar pendente por muito
  * tempo, segurando a resposta da rota e deixando a UI travada em estados
- * como "Desconectando...". 4s é suficiente para uma VPS saudável responder e
+ * como "Desconectando...". 3s é suficiente para uma VPS saudável responder e
  * curto o bastante para nunca travar a experiência do usuário.
  */
-const EVOLUTION_TIMEOUT_MS = 4000;
+const EVOLUTION_TIMEOUT_MS = 3000;
 
 async function evolutionFetch(path: string, init?: RequestInit) {
   const { baseUrl, apiKey } = getEvolutionConfig();

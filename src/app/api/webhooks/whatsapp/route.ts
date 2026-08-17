@@ -11,9 +11,15 @@ import { processIncomingMessage } from "@/lib/flow-engine";
  * dependendo da versão da Evolution API) importa aqui — os demais são
  * ignorados com 200 OK para a Evolution API não ficar reenviando.
  *
- * Autenticado por um token simples na query string (reaproveita
- * `WHATSAPP_SERVICE_TOKEN`), já que esta rota fica fora do middleware de
- * sessão (a Evolution API não tem cookie de login desta aplicação).
+ * Autenticado por `WHATSAPP_SERVICE_TOKEN`, já que esta rota fica fora do
+ * middleware de sessão (a Evolution API não tem cookie de login desta
+ * aplicação). Aceita a credencial em qualquer um destes lugares — a
+ * Evolution API v2 varia onde repassa a apikey global dependendo da versão
+ * e de como o webhook foi cadastrado, então validamos todos:
+ *   1. Query string (`?token=...`), como configurado em `setWebhook`.
+ *   2. Header `apikey` (mesmo header usado nas chamadas de gerenciamento).
+ *   3. Header `x-api-key`.
+ *   4. Header `authorization` (com ou sem prefixo `Bearer `).
  */
 
 type EvolutionMessageKey = { remoteJid?: string; fromMe?: boolean; id?: string };
@@ -53,18 +59,31 @@ function normalizeEventName(rawEvent: string | undefined): string {
 }
 
 export async function POST(request: NextRequest) {
-  const token = request.nextUrl.searchParams.get("token");
+  const queryToken = request.nextUrl.searchParams.get("token");
+  const apikeyHeader = request.headers.get("apikey");
+  const xApiKeyHeader = request.headers.get("x-api-key");
+  const authorizationHeader = request.headers.get("authorization");
+  const bearerToken = authorizationHeader?.replace(/^Bearer\s+/i, "").trim() || null;
 
   // Log incondicional — antes de qualquer validação — para conseguir auditar
   // no log da Vercel exatamente o que a Evolution API está enviando, mesmo
   // quando a requisição acaba sendo rejeitada logo abaixo.
-  console.log("[WEBHOOK HEADERS/QUERY]", { url: request.url, tokenReceived: token });
+  console.log("[WEBHOOK HEADERS/QUERY]", {
+    url: request.url,
+    queryToken,
+    apikeyHeader,
+    xApiKeyHeader,
+    authorizationHeader,
+  });
 
-  if (!token || token !== process.env.WHATSAPP_SERVICE_TOKEN) {
-    console.warn("[webhook/whatsapp] Token ausente ou inválido na query string — requisição rejeitada.", {
-      tokenReceived: token,
-      tokenConfigurado: Boolean(process.env.WHATSAPP_SERVICE_TOKEN),
-    });
+  const token = queryToken || apikeyHeader || xApiKeyHeader || bearerToken;
+  const expectedToken = process.env.WHATSAPP_SERVICE_TOKEN;
+
+  if (!token || !expectedToken || token !== expectedToken) {
+    console.warn(
+      "[webhook/whatsapp] Nenhuma credencial válida encontrada (query `token`, header `apikey`, `x-api-key` ou `authorization`) — requisição rejeitada.",
+      { queryToken, apikeyHeader, xApiKeyHeader, authorizationHeader, tokenConfigurado: Boolean(expectedToken) }
+    );
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
