@@ -60,6 +60,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  // Auditoria: loga todo payload recebido (inclusive eventos que serão
+  // ignorados abaixo, como CONNECTION_UPDATE) para conferir no log da Vercel
+  // se a Evolution API está de fato chamando este webhook.
+  console.log("[WEBHOOK RECEBIDO]", JSON.stringify(body));
+
   const eventName = (body.event ?? "").toUpperCase().replace(/[.\s]/g, "_");
   if (eventName !== "MESSAGES_UPSERT") {
     return NextResponse.json({ ok: true });

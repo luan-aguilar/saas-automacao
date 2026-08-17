@@ -124,6 +124,9 @@ function extractQr(data: unknown): EvolutionQrResult {
   return { base64, pairingCode: qr.pairingCode ?? null };
 }
 
+/** Eventos assinados no webhook da instância — ver `setWebhook`/`createInstance`. */
+const WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE"];
+
 /**
  * Cria a instância do zero na Evolution API e retorna o QR Code gerado.
  *
@@ -140,14 +143,31 @@ function extractQr(data: unknown): EvolutionQrResult {
  * criação limpa. Se ainda assim a criação falhar, o erro é propagado — é
  * melhor reportar isso claramente do que fingir sucesso reaproveitando uma
  * sessão desatualizada.
+ *
+ * Se `webhookUrl` for informado, o webhook já é embutido no próprio payload
+ * de criação (algumas versões da Evolution API v2 aceitam isso e evitam uma
+ * segunda chamada) — o chamador deve, de todo modo, também chamar
+ * `setWebhook` explicitamente logo em seguida, já que nem toda versão honra
+ * esse campo em `/instance/create`.
  */
-export async function createInstance(instanceName: string): Promise<EvolutionQrResult> {
+export async function createInstance(instanceName: string, webhookUrl?: string): Promise<EvolutionQrResult> {
   const created = await evolutionFetch("/instance/create", {
     method: "POST",
     body: JSON.stringify({
       instanceName,
       qrcode: true,
       integration: "WHATSAPP-BAILEYS",
+      ...(webhookUrl
+        ? {
+            webhook: {
+              url: webhookUrl,
+              enabled: true,
+              byEvents: false,
+              base64: false,
+              events: WEBHOOK_EVENTS,
+            },
+          }
+        : {}),
     }),
   });
 
@@ -277,7 +297,9 @@ export async function sendListMessage(
 /**
  * Configura (ou atualiza) a URL de webhook da instância na Evolution API,
  * para que ela avise esta aplicação quando o contato mandar uma mensagem
- * (evento `MESSAGES_UPSERT`). Chamado automaticamente ao criar/conectar a
+ * (`MESSAGES_UPSERT`), quando uma mensagem enviada mudar de status
+ * (`MESSAGES_UPDATE`) ou quando a conexão da instância mudar de estado
+ * (`CONNECTION_UPDATE`). Chamado automaticamente ao criar/conectar a
  * instância — ver `POST /api/whatsapp/connect`.
  */
 export async function setWebhook(instanceName: string, webhookUrl: string): Promise<void> {
@@ -287,9 +309,9 @@ export async function setWebhook(instanceName: string, webhookUrl: string): Prom
       webhook: {
         enabled: true,
         url: webhookUrl,
-        events: ["MESSAGES_UPSERT"],
         byEvents: false,
         base64: false,
+        events: WEBHOOK_EVENTS,
       },
     }),
   });
