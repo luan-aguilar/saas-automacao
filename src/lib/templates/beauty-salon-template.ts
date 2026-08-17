@@ -11,32 +11,45 @@
  * ---------------------------------------------------------------------------
  * DIVISÃO DE RESPONSABILIDADES (importante para quem for editar este arquivo)
  * ---------------------------------------------------------------------------
- * O fluxo é deliberadamente dividido em duas camadas bem separadas:
+ * Historicamente esse template usava um único node de "Lista" do WhatsApp
+ * para mostrar as categorias — mas mensagens de Lista têm um bug conhecido e
+ * não corrigido na Evolution API (erro `this.isZero is not a function`,
+ * reproduzido em v2.3.7 E v2.3.6, issue fechada como "not planned" pelos
+ * mantenedores: github.com/EvolutionAPI/evolution-api/issues/2390). Botões
+ * (`sendButtons`) funcionam normalmente, mas têm limite de 3 opções — por
+ * isso as 4 categorias são paginadas em duas telas de botões que se
+ * conectam num loop (ver `NAVEGAÇÃO DE CATEGORIAS` abaixo).
  *
- * 1) NÓ DE LISTA (WhatsApp, `bs-categorias`) — a ÚNICA interface "clicável"
- *    do fluxo. Mostra exclusivamente as 4 categorias principais + a opção
- *    "Informações e Endereço" (5 itens no total). Ele NÃO lista sub-serviços
- *    — isso é proposital, pois a API de lista do WhatsApp tem espaço/
- *    caracteres limitados e o catálogo completo (com dezenas de sub-serviços
- *    por categoria) não caberia de forma legível em botões/lista.
+ * O fluxo é dividido em três camadas:
  *
- * 2) NÓ DE IA (`bs-ia-coleta`) — assume a conversa em texto corrido assim que
- *    a cliente escolhe uma categoria na lista. É o `customPrompt` deste nó
- *    (constante `AI_COLLECTION_PROMPT` abaixo) que contém o catálogo
- *    completo de sub-serviços, as informações gerais do salão e as regras de
- *    interação (múltiplos serviços, coleta/validação de fotos, navegação
- *    "Voltar", confirmação obrigatória antes de notificar o salão).
+ * 1) NAVEGAÇÃO DE CATEGORIAS (botões, 2 páginas) — `bs-pagina1`/`bs-pagina2`.
+ *    Página 1: Cabelo | Unhas | Mais opções ➡️
+ *    Página 2: Cílios | Sobrancelhas | ⬅️ Voltar às opções anteriores
+ *    "Mais opções" e "Voltar" ficam num loop entre as duas páginas até a
+ *    cliente escolher uma categoria de verdade.
+ *
+ * 2) SUB-SERVIÇOS EM TEXTO PURO (`bs-sub-*`) — assim que uma categoria é
+ *    escolhida, envia o catálogo completo daquela categoria como texto
+ *    simples, um sub-serviço por linha (sem botões — a API de botões do
+ *    WhatsApp não comporta listas longas). Segue automaticamente para a IA.
+ *
+ * 3) NÓ DE IA (`bs-ia-coleta`) — assume a conversa em texto corrido logo
+ *    depois do catálogo ser exibido. O `customPrompt` (constante
+ *    `AI_COLLECTION_PROMPT`) mantém o catálogo completo das 4 categorias
+ *    (para validar o que a cliente digitar, mesmo se ela mencionar mais de
+ *    uma categoria) e as regras de interação (múltiplos serviços, coleta de
+ *    fotos, confirmação obrigatória antes do alerta final).
  *
  * TRIGGER (primeira mensagem)
- *   -> NO_1 Lista de categorias (Cabelo | Unhas | Cílios | Sobrancelhas | Informações e Endereço)
- *        -> [Informações e Endereço] mensagem estática com endereço/horários/avaliação gratuita
- *        -> [qualquer categoria de serviço] NO_IA Agente de coleta (texto fluido, catálogo completo)
- *             -> NO_ALERTA Notificação de lead qualificado para o dono do salão
+ *   -> Página 1 (Cabelo | Unhas | Mais opções)
+ *        -> [Mais opções] Página 2 (Cílios | Sobrancelhas | Voltar)
+ *             -> [Voltar] Página 1 (loop)
+ *             -> [Cílios/Sobrancelhas] Sub-serviços (texto) -> IA
+ *        -> [Cabelo/Unhas] Sub-serviços (texto) -> IA
+ *   -> IA (Agente de coleta, texto corrido) -> Notificação de lead qualificado
  *
- * O roteamento da escolha da lista usa um bloco de Condição (`condition`)
- * avaliando a variável `ultima_resposta` (resposta/título selecionado mais
- * recente do contato) — o mesmo padrão já usado no restante do Construtor de
- * Fluxos.
+ * O roteamento usa blocos de Condição (`condition`) avaliando a variável
+ * `ultima_resposta` (texto do botão clicado mais recentemente pelo contato).
  */
 
 import type { Node, Edge } from "@xyflow/react";
@@ -63,29 +76,101 @@ const LEAD_NOTIFICATION_MESSAGE = `🔥 *NOVO LEAD QUALIFICADO* 🔥
 📸 *Foto Referência:* {{foto_referencia_url}}
 🎯 *Resumo do Atendimento:* {{resumo_ia}}`;
 
+/** Catálogo de sub-serviços por categoria — usado tanto nas mensagens de texto puro quanto no prompt da IA. */
+const SUB_SERVICES: Record<"cabelo" | "unhas" | "cilios" | "sobrancelhas", string[]> = {
+  cabelo: [
+    "Avaliação para Mechas",
+    "Avaliação para Mega Hair",
+    "Mechas",
+    "Mega Hair",
+    "Hair Contour",
+    "Coloração",
+    "Botox Capilar",
+    "Progressiva",
+    "Detox Capilar",
+    "Corte",
+    "Escova",
+    "Babyliss",
+    "Tratamentos e Cronogramas Capilares",
+    "Nutrição",
+    "Hidratação",
+    "Matização",
+    "Plástica dos Fios",
+    "Selagem",
+    "Ozonioterapia Capilar",
+    "Decapagem",
+    "Tonalização",
+    "Maquiagem",
+    "Penteado",
+    "Outros",
+  ],
+  unhas: [
+    "Manicure",
+    "Pedicure",
+    "Alongamento em Gel",
+    "Alongamento em Fibra",
+    "Manutenção (15 a 20 dias)",
+    "Manutenção (acima de 30 dias)",
+    "Banho de Gel",
+    "Blindagem das Mãos",
+    "Blindagem dos Pés",
+    "Decoração (mãos ou pés)",
+    "Esmaltação em Gel (mãos)",
+    "Esmaltação em Gel (pés)",
+    "Esmaltação Tradicional",
+    "Colocação de Unhas Postiças",
+    "Spa dos Pés",
+    "Outros",
+  ],
+  cilios: [
+    "Extensão de Cílios – Técnica Fox Eyes",
+    "Extensão de Cílios – Demais técnicas",
+    "Manutenção – Técnica Fox Eyes",
+    "Manutenção – Demais técnicas",
+    "Outros",
+  ],
+  sobrancelhas: [
+    "Brow Lamination",
+    "Dermaplaning",
+    "Design com Henna",
+    "Epilação de Buço",
+    "Hydra Gloss",
+    "Lash Lifting",
+    "Natural Design",
+    "Outros",
+  ],
+};
+
+/** Monta a mensagem de texto puro (um sub-serviço por linha) enviada logo após a escolha da categoria. */
+function subServiceMessage(categoryLabel: string, category: keyof typeof SUB_SERVICES): string {
+  return `Ótimo! Esses são os serviços de ${categoryLabel} que trabalhamos:\n\n${SUB_SERVICES[category].join("\n")}`;
+}
+
 /**
  * System prompt do "Agente de Coleta" (nó de Resposta IA). Assume a conversa
- * em texto corrido assim que a cliente escolhe uma categoria na lista do
- * WhatsApp — é aqui, e não na interface de botões/lista, que vive o catálogo
- * completo de sub-serviços e as regras de atendimento.
+ * em texto corrido logo depois do catálogo de sub-serviços (texto puro) ser
+ * exibido — por isso a instrução abaixo não pede pra IA "apresentar" a
+ * lista de novo, só perguntar o que a cliente escolheu. O catálogo completo
+ * das 4 categorias continua aqui para a IA validar o que for digitado,
+ * mesmo que a cliente cite algo de outra categoria.
  */
-const AI_COLLECTION_PROMPT = `Você é a assistente virtual do salão de beleza/estética Home Concept. A cliente acabou de escolher uma categoria de serviço em uma lista do WhatsApp (Cabelo, Unhas, Cílios ou Sobrancelhas). A partir daqui, VOCÊ assume a conversa inteiramente por texto corrido: apresente os sub-serviços da categoria escolhida (usando o catálogo abaixo) para a cliente escolher, e conduza toda a coleta de informações necessárias para o agendamento.
+const AI_COLLECTION_PROMPT = `Você é a assistente virtual do salão de beleza/estética Home Concept. A cliente acabou de escolher uma categoria de serviço (Cabelo, Unhas, Cílios ou Sobrancelhas) e JÁ RECEBEU, em uma mensagem separada, a lista completa dos sub-serviços dessa categoria (um por linha). A partir daqui, VOCÊ assume a conversa inteiramente por texto corrido: comece com uma mensagem curta e calorosa perguntando qual(is) sub-serviço(s) da lista ela deseja (NÃO repita a lista — ela já viu), e conduza toda a coleta de informações necessárias para o agendamento.
 
 =====================================================
-CATÁLOGO COMPLETO DE SUB-SERVIÇOS (use exatamente estas opções — não invente novas)
+CATÁLOGO COMPLETO DE SUB-SERVIÇOS (use exatamente estas opções — não invente novas; serve para você validar o que a cliente disser, mesmo que ela cite outra categoria)
 =====================================================
 
 💇‍♀️ CABELO:
-Avaliação para Mechas, Avaliação para Mega Hair, Mechas, Mega Hair, Hair Contour, Coloração, Botox Capilar, Progressiva, Detox Capilar, Corte, Escova, Babyliss, Tratamentos e Cronogramas Capilares, Nutrição, Hidratação, Matização, Plástica dos Fios, Selagem, Ozonioterapia Capilar, Decapagem, Tonalização, Maquiagem, Penteado, Outros.
+${SUB_SERVICES.cabelo.join(", ")}.
 
 💅 UNHAS:
-Manicure, Pedicure, Alongamento em Gel, Alongamento em Fibra, Manutenção (15 a 20 dias), Manutenção (acima de 30 dias), Banho de Gel, Blindagem das Mãos, Blindagem dos Pés, Decoração (mãos ou pés), Esmaltação em Gel (mãos), Esmaltação em Gel (pés), Esmaltação Tradicional, Colocação de Unhas Postiças, Spa dos Pés, Outros.
+${SUB_SERVICES.unhas.join(", ")}.
 
 👁️ CÍLIOS:
-Extensão de Cílios – Técnica Fox Eyes, Extensão de Cílios – Demais técnicas, Manutenção – Técnica Fox Eyes, Manutenção – Demais técnicas, Outros.
+${SUB_SERVICES.cilios.join(", ")}.
 
 ✏️ SOBRANCELHAS:
-Brow Lamination, Dermaplaning, Design com Henna, Epilação de Buço, Hydra Gloss, Lash Lifting, Natural Design, Outros.
+${SUB_SERVICES.sobrancelhas.join(", ")}.
 
 ℹ️ INFORMAÇÕES GERAIS (use se a cliente perguntar, mesmo dentro do fluxo de coleta):
 - Horários: ${SALON_HOURS}.
@@ -107,8 +192,8 @@ b) Coleta e validação inteligente de fotos:
 - Salve os links das imagens recebidas nas variáveis \`foto_atual_url\` e \`foto_referencia_url\`. Se alguma delas não for enviada, preencha o valor como "Não enviada" (nunca deixe em branco).
 - Serviços que não envolvem cabelo (Unhas, Cílios, Sobrancelhas) não exigem fotos — não peça.
 
-c) Navegação e botão "Voltar":
-Se a cliente digitar "Voltar", "Menu", "Voltar ao menu" ou indicar de qualquer forma que clicou na categoria errada ou quer trocar de assunto, oriente-a gentilmente e reapresente as opções principais em texto (as mesmas 4 categorias + Informações e Endereço), permitindo que ela escolha de novo por texto.
+c) Navegação e "Voltar" durante a conversa com você:
+Se a cliente digitar "Voltar", "Menu", "Voltar ao menu" ou indicar de qualquer forma que quer trocar de categoria/assunto, oriente-a gentilmente e reapresente as 4 categorias em texto (Cabelo, Unhas, Cílios, Sobrancelhas), permitindo que ela escolha de novo por texto (nesse ponto da conversa não há mais botões — a navegação por botões só existe antes de você entrar na conversa).
 
 d) Confirmação obrigatória dos dados:
 ANTES de disparar a notificação final para o salão, você DEVE exibir esta mensagem de confirmação (preenchendo os colchetes com os dados já coletados) e aguardar a resposta da cliente:
@@ -148,12 +233,17 @@ function conditionNode(
   };
 }
 
-function edge(
-  id: string,
-  source: string,
-  target: string,
-  sourceHandle?: "yes" | "no"
-): Edge {
+/** Node de mensagem estática em texto puro (sem botões/lista) — sempre segue automaticamente para o próximo node. */
+function plainTextNode(id: string, position: { x: number; y: number }, label: string, message: string): Node {
+  return {
+    id,
+    type: "staticMessage",
+    position,
+    data: { label, message, interactiveType: "buttons", buttons: [] },
+  };
+}
+
+function edge(id: string, source: string, target: string, sourceHandle?: "yes" | "no"): Edge {
   return {
     id,
     source,
@@ -169,59 +259,63 @@ const NODES: Node[] = [
   {
     id: "bs-trigger",
     type: "trigger",
-    position: { x: 480, y: 0 },
+    position: { x: 600, y: 0 },
     data: { label: "Primeira mensagem", triggerType: "FIRST_MESSAGE" },
   },
 
-  // NO_1 — ÚNICA interface de botões/lista do WhatsApp neste fluxo: mostra
-  // apenas as 4 categorias principais + "Informações e Endereço" (5 itens).
-  // O catálogo completo de sub-serviços NÃO fica aqui — fica no prompt da IA
-  // (nó `bs-ia-coleta`), que assume a conversa em texto corrido.
+  // PÁGINA 1 de categorias (botões, máx. 3) — Cabelo, Unhas e "Mais opções"
+  // pra ver a página 2. Botões funcionam de verdade na Evolution API;
+  // mensagens de Lista têm um bug conhecido (ver comentário no topo do arquivo).
   {
-    id: "bs-categorias",
+    id: "bs-pagina1",
     type: "staticMessage",
-    position: { x: 480, y: 160 },
+    position: { x: 600, y: 160 },
     data: {
-      label: "Categorias (Lista WhatsApp)",
+      label: "Categorias — Página 1",
       message:
         "Olá, maravilhosa! 🤩 Seja bem-vinda ao Home Concept! Escolha abaixo a categoria de serviço que você procura:",
-      interactiveType: "list",
-      buttons: [],
-      listButtonText: "Ver Categorias",
-      listItems: [
-        { id: "cabelo", title: "💇‍♀️ Cabelo", description: "Mechas, Mega Hair, Progressiva, Corte e mais" },
-        { id: "unhas", title: "💅 Unhas", description: "Manicure, Pedicure, Alongamento e mais" },
-        { id: "cilios", title: "👁️ Cílios", description: "Extensão Fox Eyes, Manutenção e mais" },
-        { id: "sobrancelhas", title: "✏️ Sobrancelhas", description: "Design, Henna, Lash Lifting e mais" },
-        { id: "informacoes", title: "ℹ️ Informações e Endereço", description: "Horários, avaliação e localização" },
-      ],
-    },
-  },
-
-  // Roteamento da escolha de NO_1: "Informações e Endereço" é a única opção
-  // respondida sem envolver a IA — as outras 4 (categorias de serviço) vão
-  // direto para o Agente de coleta em texto.
-  conditionNode("bs-cond-informacoes", { x: 480, y: 340 }, "Escolheu Informações e Endereço?", "Informações"),
-
-  // Ramo "Informações e Endereço".
-  {
-    id: "bs-info-msg",
-    type: "staticMessage",
-    position: { x: 760, y: 520 },
-    data: {
-      label: "Informações e Endereço",
-      message: `📍 ${SALON_ADDRESS}\n\n🕐 Horário de atendimento: ${SALON_HOURS}.\n\n✅ A avaliação é gratuita! Se quiser, posso te ajudar a agendar um horário agora mesmo. 😉`,
       interactiveType: "buttons",
-      buttons: [],
+      buttons: ["💇‍♀️ Cabelo", "💅 Unhas", "Mais opções ➡️"],
     },
   },
 
-  // NO_IA — Agente de coleta (Resposta IA). Assume a conversa por texto
-  // corrido assim que a cliente escolhe uma categoria de serviço na lista.
+  conditionNode("bs-cond-pag1-maisopcoes", { x: 600, y: 320 }, "Clicou em 'Mais opções'?", "Mais opções"),
+  conditionNode("bs-cond-pag1-cabelo", { x: 380, y: 460 }, "Escolheu Cabelo?", "Cabelo"),
+
+  // PÁGINA 2 de categorias — Cílios, Sobrancelhas e "Voltar" pra página 1
+  // (loop entre as duas páginas até a cliente escolher uma categoria).
+  {
+    id: "bs-pagina2",
+    type: "staticMessage",
+    position: { x: 820, y: 460 },
+    data: {
+      label: "Categorias — Página 2",
+      message: "Mais categorias disponíveis:",
+      interactiveType: "buttons",
+      buttons: ["👁️ Cílios", "✏️ Sobrancelhas", "⬅️ Voltar"],
+    },
+  },
+
+  conditionNode("bs-cond-pag2-voltar", { x: 820, y: 600 }, "Clicou em 'Voltar'?", "Voltar"),
+  conditionNode("bs-cond-pag2-cilios", { x: 1040, y: 740 }, "Escolheu Cílios?", "Cílios"),
+
+  // Sub-serviços em texto puro (um por linha) — seguem automaticamente pra IA.
+  plainTextNode("bs-sub-cabelo", { x: 100, y: 620 }, "Sub-serviços — Cabelo", subServiceMessage("Cabelo", "cabelo")),
+  plainTextNode("bs-sub-unhas", { x: 380, y: 640 }, "Sub-serviços — Unhas", subServiceMessage("Unhas", "unhas")),
+  plainTextNode("bs-sub-cilios", { x: 940, y: 900 }, "Sub-serviços — Cílios", subServiceMessage("Cílios", "cilios")),
+  plainTextNode(
+    "bs-sub-sobrancelhas",
+    { x: 1180, y: 900 },
+    "Sub-serviços — Sobrancelhas",
+    subServiceMessage("Sobrancelhas", "sobrancelhas")
+  ),
+
+  // NÓ DE IA — Agente de coleta (Resposta IA). Assume a conversa por texto
+  // corrido assim que o catálogo de sub-serviços (texto puro) é exibido.
   {
     id: "bs-ia-coleta",
     type: "aiResponse",
-    position: { x: 200, y: 520 },
+    position: { x: 600, y: 1080 },
     data: {
       label: "Agente de coleta (IA) — catálogo completo",
       useGlobalPrompt: false,
@@ -229,11 +323,11 @@ const NODES: Node[] = [
     },
   },
 
-  // NO_ALERTA — Notificação do lead qualificado para o dono do salão.
+  // NÓ DE ALERTA — Notificação do lead qualificado para o dono do salão.
   {
     id: "bs-lead-alert",
     type: "alertNotification",
-    position: { x: 200, y: 700 },
+    position: { x: 600, y: 1240 },
     data: {
       label: "Notificação: novo lead qualificado",
       recipientPhone: "",
@@ -243,13 +337,32 @@ const NODES: Node[] = [
 ];
 
 const EDGES: Edge[] = [
-  edge("bs-e-trigger-categorias", "bs-trigger", "bs-categorias"),
-  edge("bs-e-categorias-cond-informacoes", "bs-categorias", "bs-cond-informacoes"),
+  edge("bs-e-trigger-pagina1", "bs-trigger", "bs-pagina1"),
+  edge("bs-e-pagina1-cond-maisopcoes", "bs-pagina1", "bs-cond-pag1-maisopcoes"),
 
-  // "Informações e Endereço" -> mensagem estática (fim do fluxo).
-  edge("bs-e-cond-informacoes-yes", "bs-cond-informacoes", "bs-info-msg", "yes"),
-  // Qualquer categoria de serviço -> Agente de coleta (IA).
-  edge("bs-e-cond-informacoes-no", "bs-cond-informacoes", "bs-ia-coleta", "no"),
+  // Página 1: "Mais opções" -> página 2; qualquer outra coisa -> checa se foi Cabelo.
+  edge("bs-e-cond-maisopcoes-yes", "bs-cond-pag1-maisopcoes", "bs-pagina2", "yes"),
+  edge("bs-e-cond-maisopcoes-no", "bs-cond-pag1-maisopcoes", "bs-cond-pag1-cabelo", "no"),
+
+  // Cabelo ou (por eliminação) Unhas.
+  edge("bs-e-cond-cabelo-yes", "bs-cond-pag1-cabelo", "bs-sub-cabelo", "yes"),
+  edge("bs-e-cond-cabelo-no", "bs-cond-pag1-cabelo", "bs-sub-unhas", "no"),
+
+  edge("bs-e-pagina2-cond-voltar", "bs-pagina2", "bs-cond-pag2-voltar"),
+
+  // Página 2: "Voltar" -> volta pra página 1 (loop); qualquer outra coisa -> checa se foi Cílios.
+  edge("bs-e-cond-voltar-yes", "bs-cond-pag2-voltar", "bs-pagina1", "yes"),
+  edge("bs-e-cond-voltar-no", "bs-cond-pag2-voltar", "bs-cond-pag2-cilios", "no"),
+
+  // Cílios ou (por eliminação) Sobrancelhas.
+  edge("bs-e-cond-cilios-yes", "bs-cond-pag2-cilios", "bs-sub-cilios", "yes"),
+  edge("bs-e-cond-cilios-no", "bs-cond-pag2-cilios", "bs-sub-sobrancelhas", "no"),
+
+  // As 4 categorias convergem no mesmo Agente de Coleta (IA).
+  edge("bs-e-sub-cabelo-ia", "bs-sub-cabelo", "bs-ia-coleta"),
+  edge("bs-e-sub-unhas-ia", "bs-sub-unhas", "bs-ia-coleta"),
+  edge("bs-e-sub-cilios-ia", "bs-sub-cilios", "bs-ia-coleta"),
+  edge("bs-e-sub-sobrancelhas-ia", "bs-sub-sobrancelhas", "bs-ia-coleta"),
 
   edge("bs-e-ia-coleta-alert", "bs-ia-coleta", "bs-lead-alert"),
 ];
