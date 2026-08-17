@@ -5,9 +5,16 @@ import { ConversationList, type ChatSummary } from "./conversation-list";
 import { ChatPanel } from "./chat-panel";
 import { MessageSquareText } from "lucide-react";
 
-export function ChatView({ initialChats }: { initialChats: ChatSummary[] }) {
+export function ChatView({
+  initialChats,
+  initialAiGloballyEnabled,
+}: {
+  initialChats: ChatSummary[];
+  initialAiGloballyEnabled: boolean;
+}) {
   const [chats, setChats] = useState(initialChats);
   const [selectedId, setSelectedId] = useState<string | null>(initialChats[0]?.id ?? null);
+  const [aiGloballyEnabled, setAiGloballyEnabled] = useState(initialAiGloballyEnabled);
 
   useEffect(() => {
     const interval = setInterval(async () => {
@@ -33,11 +40,26 @@ export function ChatView({ initialChats }: { initialChats: ChatSummary[] }) {
     });
   }
 
+  async function handleGlobalAiToggle(enabled: boolean) {
+    setAiGloballyEnabled(enabled);
+    await fetch("/api/config/ai-toggle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    });
+  }
+
   const selectedChat = chats.find((c) => c.id === selectedId) ?? null;
 
   return (
     <div className="flex h-full">
-      <ConversationList chats={chats} selectedId={selectedId} onSelect={setSelectedId} />
+      <ConversationList
+        chats={chats}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+        aiGloballyEnabled={aiGloballyEnabled}
+        onGlobalAiToggle={handleGlobalAiToggle}
+      />
       {selectedChat ? (
         <ChatPanel chat={selectedChat} onAiToggle={handleAiToggle} onLocalAiStateSync={syncLocalAiState} />
       ) : (

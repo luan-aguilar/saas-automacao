@@ -24,9 +24,17 @@
  *
  * 1) NAVEGAÇÃO DE CATEGORIAS (botões, 2 páginas) — `bs-pagina1`/`bs-pagina2`.
  *    Página 1: Cabelo | Unhas | Mais opções ➡️
- *    Página 2: Cílios | Sobrancelhas | ⬅️ Voltar às opções anteriores
+ *    Página 2: Cílios | Sobrancelhas | ⬅️ Voltar
  *    "Mais opções" e "Voltar" ficam num loop entre as duas páginas até a
  *    cliente escolher uma categoria de verdade.
+ *
+ *    IMPORTANTE: a cliente pode digitar qualquer texto livre em vez de
+ *    clicar num botão — a cadeia de condições checa explicitamente CADA
+ *    uma das 3 opções da página (nunca "por eliminação"), e se nenhuma
+ *    bater, cai num node de retry (`bs-pagina1-retry`/`bs-pagina2-retry`)
+ *    que reenvia os mesmos botões. Antes desta correção, uma resposta que
+ *    não batia com nada era tratada por eliminação binária como se fosse a
+ *    última opção da página (ex: "bom dia" virava "Unhas" por engano).
  *
  * 2) SUB-SERVIÇOS EM TEXTO PURO (`bs-sub-*`) — assim que uma categoria é
  *    escolhida, envia o catálogo completo daquela categoria como texto
@@ -281,6 +289,24 @@ const NODES: Node[] = [
 
   conditionNode("bs-cond-pag1-maisopcoes", { x: 600, y: 320 }, "Clicou em 'Mais opções'?", "Mais opções"),
   conditionNode("bs-cond-pag1-cabelo", { x: 380, y: 460 }, "Escolheu Cabelo?", "Cabelo"),
+  conditionNode("bs-cond-pag1-unhas", { x: 200, y: 600 }, "Escolheu Unhas?", "Unhas"),
+
+  // Retry da página 1 — cai aqui quando a resposta não bateu com NENHUM dos 3
+  // botões (ex: a cliente digitou um texto livre em vez de clicar). Reenvia
+  // os mesmos botões com uma mensagem mais curta, em vez de "adivinhar" a
+  // categoria por eliminação (foi exatamente esse bug que fez um "bom dia"
+  // ser tratado como se fosse "Unhas" antes desta correção).
+  {
+    id: "bs-pagina1-retry",
+    type: "staticMessage",
+    position: { x: 200, y: 760 },
+    data: {
+      label: "Categorias — Página 1 (não entendi)",
+      message: "Desculpe, não entendi 🙏 Por favor, toque em uma das opções abaixo:",
+      interactiveType: "buttons",
+      buttons: ["💇‍♀️ Cabelo", "💅 Unhas", "Mais opções ➡️"],
+    },
+  },
 
   // PÁGINA 2 de categorias — Cílios, Sobrancelhas e "Voltar" pra página 1
   // (loop entre as duas páginas até a cliente escolher uma categoria).
@@ -298,6 +324,20 @@ const NODES: Node[] = [
 
   conditionNode("bs-cond-pag2-voltar", { x: 820, y: 600 }, "Clicou em 'Voltar'?", "Voltar"),
   conditionNode("bs-cond-pag2-cilios", { x: 1040, y: 740 }, "Escolheu Cílios?", "Cílios"),
+  conditionNode("bs-cond-pag2-sobrancelhas", { x: 1220, y: 880 }, "Escolheu Sobrancelhas?", "Sobrancelhas"),
+
+  // Retry da página 2 — mesmo princípio do retry da página 1 acima.
+  {
+    id: "bs-pagina2-retry",
+    type: "staticMessage",
+    position: { x: 1220, y: 1020 },
+    data: {
+      label: "Categorias — Página 2 (não entendi)",
+      message: "Desculpe, não entendi 🙏 Por favor, toque em uma das opções abaixo:",
+      interactiveType: "buttons",
+      buttons: ["👁️ Cílios", "✏️ Sobrancelhas", "⬅️ Voltar"],
+    },
+  },
 
   // Sub-serviços em texto puro (um por linha) — seguem automaticamente pra IA.
   plainTextNode("bs-sub-cabelo", { x: 100, y: 620 }, "Sub-serviços — Cabelo", subServiceMessage("Cabelo", "cabelo")),
@@ -339,24 +379,31 @@ const NODES: Node[] = [
 const EDGES: Edge[] = [
   edge("bs-e-trigger-pagina1", "bs-trigger", "bs-pagina1"),
   edge("bs-e-pagina1-cond-maisopcoes", "bs-pagina1", "bs-cond-pag1-maisopcoes"),
+  // O retry da página 1 reentra na MESMA cadeia de condições da página 1 original.
+  edge("bs-e-pagina1retry-cond-maisopcoes", "bs-pagina1-retry", "bs-cond-pag1-maisopcoes"),
 
-  // Página 1: "Mais opções" -> página 2; qualquer outra coisa -> checa se foi Cabelo.
+  // Página 1: "Mais opções" -> página 2; senão checa Cabelo -> senão checa Unhas
+  // -> se não bateu com NENHUM dos 3 botões, reenvia as opções (retry) em vez
+  // de adivinhar a categoria.
   edge("bs-e-cond-maisopcoes-yes", "bs-cond-pag1-maisopcoes", "bs-pagina2", "yes"),
   edge("bs-e-cond-maisopcoes-no", "bs-cond-pag1-maisopcoes", "bs-cond-pag1-cabelo", "no"),
-
-  // Cabelo ou (por eliminação) Unhas.
   edge("bs-e-cond-cabelo-yes", "bs-cond-pag1-cabelo", "bs-sub-cabelo", "yes"),
-  edge("bs-e-cond-cabelo-no", "bs-cond-pag1-cabelo", "bs-sub-unhas", "no"),
+  edge("bs-e-cond-cabelo-no", "bs-cond-pag1-cabelo", "bs-cond-pag1-unhas", "no"),
+  edge("bs-e-cond-unhas-yes", "bs-cond-pag1-unhas", "bs-sub-unhas", "yes"),
+  edge("bs-e-cond-unhas-no", "bs-cond-pag1-unhas", "bs-pagina1-retry", "no"),
 
   edge("bs-e-pagina2-cond-voltar", "bs-pagina2", "bs-cond-pag2-voltar"),
+  // O retry da página 2 reentra na MESMA cadeia de condições da página 2 original.
+  edge("bs-e-pagina2retry-cond-voltar", "bs-pagina2-retry", "bs-cond-pag2-voltar"),
 
-  // Página 2: "Voltar" -> volta pra página 1 (loop); qualquer outra coisa -> checa se foi Cílios.
+  // Página 2: "Voltar" -> volta pra página 1 (loop); senão checa Cílios -> senão
+  // checa Sobrancelhas -> se não bateu com nenhum, reenvia as opções (retry).
   edge("bs-e-cond-voltar-yes", "bs-cond-pag2-voltar", "bs-pagina1", "yes"),
   edge("bs-e-cond-voltar-no", "bs-cond-pag2-voltar", "bs-cond-pag2-cilios", "no"),
-
-  // Cílios ou (por eliminação) Sobrancelhas.
   edge("bs-e-cond-cilios-yes", "bs-cond-pag2-cilios", "bs-sub-cilios", "yes"),
-  edge("bs-e-cond-cilios-no", "bs-cond-pag2-cilios", "bs-sub-sobrancelhas", "no"),
+  edge("bs-e-cond-cilios-no", "bs-cond-pag2-cilios", "bs-cond-pag2-sobrancelhas", "no"),
+  edge("bs-e-cond-sobrancelhas-yes", "bs-cond-pag2-sobrancelhas", "bs-sub-sobrancelhas", "yes"),
+  edge("bs-e-cond-sobrancelhas-no", "bs-cond-pag2-sobrancelhas", "bs-pagina2-retry", "no"),
 
   // As 4 categorias convergem no mesmo Agente de Coleta (IA).
   edge("bs-e-sub-cabelo-ia", "bs-sub-cabelo", "bs-ia-coleta"),

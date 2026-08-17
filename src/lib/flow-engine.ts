@@ -323,10 +323,14 @@ async function logInboundMessageAndGetChat(
  * Antes de tudo — SEMPRE, independente de o tenant ter um fluxo ativo ou
  * não — registra a mensagem recebida na Central de Atendimento
  * (`Chat`/`Message`), para ela nunca deixar de aparecer em `/chat`. Só depois
- * disso verifica se há um `Flow` ativo (`flow: null` = sem automação
- * configurada, encerra aqui) e `Chat.aiEnabled` (operador pausou a IA para
- * este contato — a mensagem fica salva no histórico, mas o motor não avança
- * o fluxo nem dispara nenhuma resposta automática).
+ * disso passa por três portões, nesta ordem:
+ *   1. `Config.aiGloballyEnabled` — chave geral do tenant. Se estiver
+ *      desligada, NINGUÉM recebe resposta automática, nem contato novo (essa
+ *      checagem roda antes de qualquer coisa ligada a um contato específico).
+ *   2. `flow: null` — tenant sem fluxo ativo configurado.
+ *   3. `Chat.aiEnabled` — operador pausou a IA só para este contato.
+ * Em qualquer um desses casos a mensagem já está salva no histórico, só a
+ * automação é que não roda.
  */
 export async function processIncomingMessage(params: {
   userId: string;
@@ -339,6 +343,15 @@ export async function processIncomingMessage(params: {
 
   const effectiveText = messageText || "[mensagem sem texto reconhecível]";
   const chat = await logInboundMessageAndGetChat(userId, contactPhone, contactName, effectiveText);
+
+  const config = await prisma.config.findUnique({ where: { userId }, select: { aiGloballyEnabled: true } });
+  if (config?.aiGloballyEnabled === false) {
+    console.log(
+      "[flow-engine] Chave geral de IA desativada para este tenant — mensagem registrada, sem automação:",
+      { userId, contactPhone }
+    );
+    return;
+  }
 
   if (!flow) {
     console.log(

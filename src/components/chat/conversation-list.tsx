@@ -3,8 +3,10 @@
 import { cn, formatPhone } from "@/lib/utils";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { Bot, PowerOff } from "lucide-react";
 
 export type ChatSummary = {
   id: string;
@@ -22,16 +24,43 @@ export function ConversationList({
   chats,
   selectedId,
   onSelect,
+  aiGloballyEnabled,
+  onGlobalAiToggle,
 }: {
   chats: ChatSummary[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  aiGloballyEnabled: boolean;
+  onGlobalAiToggle: (enabled: boolean) => void;
 }) {
   return (
     <div className="flex h-full w-80 shrink-0 flex-col border-r border-border bg-card">
       <div className="border-b border-border px-4 py-3">
         <h2 className="font-semibold">Conversas</h2>
         <p className="text-xs text-muted-foreground">{chats.length} conversa(s)</p>
+
+        <div
+          className={cn(
+            "mt-3 flex items-center justify-between gap-2 rounded-md border px-2.5 py-2",
+            aiGloballyEnabled ? "border-border bg-muted/30" : "border-destructive/40 bg-destructive/10"
+          )}
+        >
+          <span className="flex items-center gap-1.5 text-xs font-medium">
+            {aiGloballyEnabled ? (
+              <Bot className="h-3.5 w-3.5" />
+            ) : (
+              <PowerOff className="h-3.5 w-3.5 text-destructive" />
+            )}
+            Chave geral de IA
+          </span>
+          <Switch checked={aiGloballyEnabled} onCheckedChange={onGlobalAiToggle} />
+        </div>
+        {!aiGloballyEnabled && (
+          <p className="mt-1.5 text-[11px] leading-snug text-destructive">
+            Desativada: o robô não responde ninguém agora, nem contatos novos — mesmo com "IA ativa" numa
+            conversa específica.
+          </p>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto">
         {chats.map((chat) => (

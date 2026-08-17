@@ -122,6 +122,13 @@ model Config {
   temperature      Float   @default(0.7)
   aiEnabledDefault Boolean @default(true) // valor padrão do toggle de IA para novas conversas
 
+  // Chave geral de IA do tenant: quando false, o motor de fluxo NÃO responde
+  // a ninguém automaticamente — nem contatos novos — independente do
+  // `Chat.aiEnabled` de cada conversa individual. É o "disjuntor mestre";
+  // os toggles por conversa continuam existindo por baixo, só não têm efeito
+  // enquanto esta chave estiver desligada.
+  aiGloballyEnabled Boolean @default(true)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
