@@ -27,9 +27,11 @@ const senderLabel: Record<Message["sender"], string> = {
 export function ChatPanel({
   chat,
   onAiToggle,
+  onLocalAiStateSync,
 }: {
   chat: ChatSummary;
   onAiToggle: (chatId: string, aiEnabled: boolean) => void;
+  onLocalAiStateSync: (chatId: string, aiEnabled: boolean) => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
@@ -72,6 +74,12 @@ export function ChatPanel({
       const data = await res.json();
       setMessages((prev) => [...prev, data.message]);
       setDraft("");
+      // O backend desativa a IA automaticamente ao receber um envio manual —
+      // reflete isso no switch já aqui (sem chamar /toggle-ai de novo, que
+      // duplicaria a mensagem de sistema), sem esperar o próximo polling.
+      if (data.aiEnabled === false && chat.aiEnabled) {
+        onLocalAiStateSync(chat.id, false);
+      }
     }
   }
 

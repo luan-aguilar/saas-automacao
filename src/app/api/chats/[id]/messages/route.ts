@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { sendWhatsappMessage } from "@/lib/whatsapp-service";
 
 async function assertOwnership(chatId: string, userId: string) {
   const chat = await prisma.chat.findUnique({ where: { id: chatId } });
@@ -61,14 +62,22 @@ export async function POST(request: Request, { params }: { params: { id: string 
     },
   });
 
+  // Intervenção manual do operador: desativa a IA para esta conversa
+  // automaticamente (o motor de fluxo passa a ignorar novas mensagens deste
+  // contato até o operador reativar pelo toggle no topo do chat).
   await prisma.chat.update({
     where: { id: params.id },
-    data: { lastMessageAt: new Date(), lastMessagePreview: parsed.data.content.slice(0, 120) },
+    data: {
+      lastMessageAt: new Date(),
+      lastMessagePreview: parsed.data.content.slice(0, 120),
+      aiEnabled: false,
+    },
   });
 
-  // TODO: encaminhar esta mensagem ao serviço externo do WhatsApp para envio real
-  // (POST `${WHATSAPP_SERVICE_URL}/messages`), já que o envio efetivo depende da
-  // sessão Baileys/whatsapp-web.js mantida fora da Vercel.
+  const sendResult = await sendWhatsappMessage(session.user.id, chat.contactPhone, parsed.data.content);
+  if (!sendResult.ok) {
+    console.error("[chats/messages] Mensagem salva, mas falhou ao enviar via WhatsApp:", sendResult.error);
+  }
 
-  return NextResponse.json({ message });
+  return NextResponse.json({ message, aiEnabled: false });
 }

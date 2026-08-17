@@ -20,8 +20,12 @@ export function ChatView({ initialChats }: { initialChats: ChatSummary[] }) {
     return () => clearInterval(interval);
   }, []);
 
-  async function handleAiToggle(chatId: string, aiEnabled: boolean) {
+  function syncLocalAiState(chatId: string, aiEnabled: boolean) {
     setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, aiEnabled } : c)));
+  }
+
+  async function handleAiToggle(chatId: string, aiEnabled: boolean) {
+    syncLocalAiState(chatId, aiEnabled);
     await fetch(`/api/chats/${chatId}/toggle-ai`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -35,7 +39,7 @@ export function ChatView({ initialChats }: { initialChats: ChatSummary[] }) {
     <div className="flex h-full">
       <ConversationList chats={chats} selectedId={selectedId} onSelect={setSelectedId} />
       {selectedChat ? (
-        <ChatPanel chat={selectedChat} onAiToggle={handleAiToggle} />
+        <ChatPanel chat={selectedChat} onAiToggle={handleAiToggle} onLocalAiStateSync={syncLocalAiState} />
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
           <MessageSquareText className="h-10 w-10" />

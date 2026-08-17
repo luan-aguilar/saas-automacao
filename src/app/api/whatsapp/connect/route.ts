@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { createOrConnectInstance, instanceNameFor, setWebhook } from "@/lib/evolution-api";
+import { createOrConnectInstance, deleteInstance, instanceNameFor, setWebhook } from "@/lib/evolution-api";
 
 /** Monta a URL pública do webhook de mensagens, autenticada por token na query string. */
 function webhookUrlFor(): string | null {
@@ -33,6 +33,21 @@ export async function POST() {
     create: { userId: session.user.id, status: "CONNECTING", externalSessionId: instanceName },
     update: { status: "CONNECTING", qrCode: null, externalSessionId: instanceName },
   });
+
+  // Expurgo preventivo: apaga qualquer instância antiga com este nome antes de
+  // recriar do zero. Sem isso, uma sessão travada/corrompida na Evolution API
+  // (ex: credenciais órfãs de uma desconexão anterior mal-sucedida) pode
+  // impedir um QR Code novo de ser gerado ou causar reconexão automática
+  // indesejada. Melhor esforço — se a instância não existir, a Evolution API
+  // simplesmente responde com erro e seguimos para criar normalmente.
+  try {
+    await deleteInstance(instanceName);
+  } catch (error) {
+    console.warn(
+      "[whatsapp/connect] Expurgo preventivo da instância falhou (provavelmente não existia ainda):",
+      error
+    );
+  }
 
   try {
     const { base64 } = await createOrConnectInstance(instanceName);

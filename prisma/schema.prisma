@@ -237,6 +237,9 @@ model Chat {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Um contato tem no máximo uma conversa por tenant (usado por flow-engine.ts
+  // para localizar/criar a conversa ao receber uma mensagem via webhook).
+  @@unique([userId, contactPhone])
   @@index([userId, status])
   @@index([userId, lastMessageAt])
 }

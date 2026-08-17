@@ -56,8 +56,9 @@ export function interpolateVariables(template: string, variables: Record<string,
 
 /** Resultado da execução de um node: diz ao orquestrador como continuar o passeio pelo grafo. */
 export type StepResult =
-  | { ok: true; next: "continue" } // segue pela única aresta de saída do node
-  | { ok: true; next: "wait" } // pausa aqui — espera a próxima mensagem do contato
+  // segue pela única aresta de saída do node; `sentText`, se houver, é registrado como mensagem OUTBOUND no histórico do Chat
+  | { ok: true; next: "continue"; sentText?: string }
+  | { ok: true; next: "wait"; sentText?: string } // pausa aqui — espera a próxima mensagem do contato
   | { ok: true; next: "branch"; handle: "yes" | "no" } // node de condição — escolhe a aresta correspondente
   | { ok: false; error: string };
 
@@ -104,17 +105,17 @@ async function executeStaticMessageNode(data: StaticMessageData, context: FlowCo
       data.listButtonText || "Ver opções",
       data.listItems
     );
-    return result.ok ? { ok: true, next: "wait" } : { ok: false, error: result.error };
+    return result.ok ? { ok: true, next: "wait", sentText: text } : { ok: false, error: result.error };
   }
 
   if (interactiveType === "buttons" && data.buttons && data.buttons.length > 0) {
     const result = await sendWhatsappButtons(context.userId, context.contactPhone, text, data.buttons);
-    return result.ok ? { ok: true, next: "wait" } : { ok: false, error: result.error };
+    return result.ok ? { ok: true, next: "wait", sentText: text } : { ok: false, error: result.error };
   }
 
   // Sem botões/lista configurados — texto puro, segue automaticamente para o próximo node.
   const result = await sendWhatsappMessage(context.userId, context.contactPhone, text);
-  return result.ok ? { ok: true, next: "continue" } : { ok: false, error: result.error };
+  return result.ok ? { ok: true, next: "continue", sentText: text } : { ok: false, error: result.error };
 }
 
 /**
@@ -234,7 +235,7 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
   const sendResult = await sendWhatsappMessage(context.userId, context.contactPhone, reply);
   if (!sendResult.ok) return { ok: false, error: sendResult.error };
 
-  return { ok: true, next: parsed.done ? "continue" : "wait" };
+  return { ok: true, next: parsed.done ? "continue" : "wait", sentText: reply };
 }
 
 /**
@@ -274,20 +275,77 @@ type FlowGraphEdge = { id: string; source: string; target: string; sourceHandle?
 const MAX_STEPS = 25;
 
 /**
+ * Localiza (ou cria) a conversa do contato na Central de Atendimento e
+ * registra a mensagem recebida no histórico — independente de a IA estar
+ * ativa ou não, o operador precisa ver tudo que o contato escreveu.
+ */
+async function logInboundMessageAndGetChat(
+  userId: string,
+  contactPhone: string,
+  contactName: string | undefined,
+  content: string
+) {
+  const existing = await prisma.chat.findUnique({ where: { userId_contactPhone: { userId, contactPhone } } });
+
+  const chat = existing
+    ? await prisma.chat.update({
+        where: { id: existing.id },
+        data: {
+          lastMessageAt: new Date(),
+          lastMessagePreview: content.slice(0, 120),
+          unreadCount: { increment: 1 },
+          ...(contactName && contactName !== existing.contactName ? { contactName } : {}),
+        },
+      })
+    : await prisma.chat.create({
+        data: {
+          userId,
+          contactPhone,
+          contactName: contactName || contactPhone,
+          lastMessagePreview: content.slice(0, 120),
+          unreadCount: 1,
+        },
+      });
+
+  await prisma.message.create({
+    data: { chatId: chat.id, direction: "INBOUND", sender: "CONTACT", content },
+  });
+
+  return chat;
+}
+
+/**
  * Ponto de entrada do motor: recebe uma mensagem recebida de um contato,
  * localiza (ou cria) a `FlowSession` correspondente e anda pelo grafo do
  * `Flow` ativo a partir do node atual, executando cada node até pausar
  * (`WAITING_INPUT`) ou terminar o fluxo (`COMPLETED`).
+ *
+ * Antes de tudo, registra a mensagem recebida na Central de Atendimento
+ * (`Chat`/`Message`) e verifica `Chat.aiEnabled`: se um operador pausou a IA
+ * para este contato (intervenção manual), a mensagem fica salva no histórico
+ * mas o motor não avança o fluxo nem dispara nenhuma resposta automática.
  */
 export async function processIncomingMessage(params: {
   userId: string;
   flow: { id: string; nodes: unknown; edges: unknown };
   contactPhone: string;
+  contactName?: string;
   messageText: string;
 }): Promise<void> {
-  const { userId, flow, contactPhone, messageText } = params;
+  const { userId, flow, contactPhone, contactName, messageText } = params;
   const nodes = (flow.nodes as FlowNode[]) ?? [];
   const edges = (flow.edges as FlowGraphEdge[]) ?? [];
+
+  const effectiveText = messageText || "[mensagem sem texto reconhecível]";
+  const chat = await logInboundMessageAndGetChat(userId, contactPhone, contactName, effectiveText);
+
+  if (!chat.aiEnabled) {
+    console.log(
+      "[flow-engine] IA pausada para este contato (intervenção manual) — mensagem registrada, sem resposta automática:",
+      { userId, contactPhone }
+    );
+    return;
+  }
 
   let session = await prisma.flowSession.findUnique({
     where: { userId_contactPhone: { userId, contactPhone } },
@@ -303,7 +361,6 @@ export async function processIncomingMessage(params: {
   }
 
   const variables: Record<string, string> = { ...((session.variables as Record<string, string>) ?? {}) };
-  const effectiveText = messageText || "[mensagem sem texto reconhecível]";
 
   let currentId: string | null = session.currentNodeId;
 
@@ -346,6 +403,16 @@ export async function processIncomingMessage(params: {
       status = "WAITING_INPUT";
       finalNodeId = node.id;
       break;
+    }
+
+    if (result.next !== "branch" && result.sentText) {
+      await prisma.message.create({
+        data: { chatId: chat.id, direction: "OUTBOUND", sender: "AI", content: result.sentText },
+      });
+      await prisma.chat.update({
+        where: { id: chat.id },
+        data: { lastMessageAt: new Date(), lastMessagePreview: result.sentText.slice(0, 120) },
+      });
     }
 
     if (result.next === "wait") {

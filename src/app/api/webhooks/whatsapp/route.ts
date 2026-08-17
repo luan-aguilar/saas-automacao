@@ -100,6 +100,7 @@ export async function POST(request: NextRequest) {
       userId: connection.userId,
       flow: activeFlow,
       contactPhone,
+      contactName: body.data?.pushName,
       messageText,
     });
   } catch (error) {

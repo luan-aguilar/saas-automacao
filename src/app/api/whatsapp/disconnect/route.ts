@@ -53,22 +53,14 @@ export async function POST() {
     console.error("[whatsapp/disconnect] Falha ao apagar a instância na Evolution API:", error);
   }
 
-  // 3) Limpa o estado local — inclusive `externalSessionId` (nome da
-  // instância), para que o polling de /api/whatsapp/status pare de consultar
-  // a Evolution API para essa instância (que agora está apagada/inexistente)
-  // e não corra o risco de "revalidar" uma conexão antiga. Ao clicar em
-  // "Conectar" novamente, /api/whatsapp/connect gera um `instanceName` novo
-  // (determinístico, via `instanceNameFor`) e recria a instância do zero.
-  await prisma.whatsappConnection.update({
+  // 3) Remove o registro local por completo (em vez de só resetar os campos)
+  // — isso limpa qualquer estado travado da sessão anterior (QR expirado,
+  // status inconsistente, etc.) sem apagar nada de `Chat`/`Message` (o
+  // histórico de conversas do tenant é preservado). Ao clicar em "Conectar"
+  // novamente, `/api/whatsapp/connect` recria o registro do zero via upsert,
+  // com um `instanceName` novo (determinístico, via `instanceNameFor`).
+  await prisma.whatsappConnection.delete({
     where: { userId: session.user.id },
-    data: {
-      status: "DISCONNECTED",
-      qrCode: null,
-      qrExpiresAt: null,
-      phoneNumber: null,
-      externalSessionId: null,
-      lastDisconnectedAt: new Date(),
-    },
   });
 
   return NextResponse.json({ ok: true });
