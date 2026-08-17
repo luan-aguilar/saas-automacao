@@ -61,6 +61,12 @@ enum FlowNodeType {
   CONDITION
 }
 
+enum FlowSessionStatus {
+  ACTIVE
+  WAITING_INPUT
+  COMPLETED
+}
+
 // ---------------------------------------------------------------------------
 // Usuários / RBAC
 // ---------------------------------------------------------------------------
@@ -85,6 +91,7 @@ model User {
   config             Config?
   whatsappConnection WhatsappConnection?
   flows              Flow[]
+  flowSessions       FlowSession[]
   chats              Chat[]
   auditLogs          AuditLog[]
 
@@ -164,10 +171,43 @@ model Flow {
 
   version Int @default(1)
 
+  sessions FlowSession[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Sessão de fluxo — posição de cada contato dentro do grafo de um Flow
+// ---------------------------------------------------------------------------
+
+model FlowSession {
+  id     String @id @default(cuid())
+  userId String // tenant dono do fluxo/conexão de WhatsApp
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  flowId String
+  flow   Flow   @relation(fields: [flowId], references: [id], onDelete: Cascade)
+
+  contactPhone String // número do contato (com DDI), ex: "5511999998888"
+
+  // Id do node do React Flow onde o contato está parado (null = ainda não iniciou)
+  currentNodeId String?
+
+  // Variáveis capturadas ao longo da conversa (ex: { nome: "Maria", servico: "Corte" })
+  variables Json @default("{}")
+
+  status FlowSessionStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Um contato tem no máximo uma sessão ativa por tenant
+  @@unique([userId, contactPhone])
+  @@index([userId, status])
+  @@index([flowId])
 }
 
 // ---------------------------------------------------------------------------

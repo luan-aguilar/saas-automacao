@@ -175,6 +175,87 @@ export async function sendTextMessage(instanceName: string, phone: string, text:
 }
 
 /**
+ * Envia uma mensagem com botões de resposta rápida (até 3, limite do próprio
+ * WhatsApp). `buttons` é a lista de textos exibidos em cada botão — o `id` de
+ * cada botão é o índice (como string), usado depois para reconhecer qual
+ * opção o contato escolheu na resposta.
+ */
+export async function sendButtonsMessage(
+  instanceName: string,
+  phone: string,
+  title: string,
+  buttons: string[]
+) {
+  return evolutionFetch(`/message/sendButtons/${instanceName}`, {
+    method: "POST",
+    body: JSON.stringify({
+      number: phone,
+      title,
+      buttons: buttons.map((label, index) => ({
+        type: "reply",
+        displayText: label,
+        id: String(index),
+      })),
+    }),
+  });
+}
+
+export type EvolutionListItem = { id: string; title: string; description?: string };
+
+/**
+ * Envia uma mensagem de lista (até 10 itens, limite do próprio WhatsApp).
+ * Todos os itens são agrupados em uma única seção — o Construtor de Fluxos
+ * hoje não modela seções separadas.
+ */
+export async function sendListMessage(
+  instanceName: string,
+  phone: string,
+  title: string,
+  buttonText: string,
+  items: EvolutionListItem[]
+) {
+  return evolutionFetch(`/message/sendList/${instanceName}`, {
+    method: "POST",
+    body: JSON.stringify({
+      number: phone,
+      title,
+      buttonText,
+      sections: [
+        {
+          title,
+          rows: items.map((item) => ({
+            title: item.title,
+            description: item.description ?? "",
+            rowId: item.id,
+          })),
+        },
+      ],
+    }),
+  });
+}
+
+/**
+ * Configura (ou atualiza) a URL de webhook da instância na Evolution API,
+ * para que ela avise esta aplicação quando o contato mandar uma mensagem
+ * (evento `MESSAGES_UPSERT`). Chamado automaticamente ao criar/conectar a
+ * instância — ver `POST /api/whatsapp/connect`.
+ */
+export async function setWebhook(instanceName: string, webhookUrl: string): Promise<void> {
+  await evolutionFetch(`/webhook/set/${instanceName}`, {
+    method: "POST",
+    body: JSON.stringify({
+      webhook: {
+        enabled: true,
+        url: webhookUrl,
+        events: ["MESSAGES_UPSERT"],
+        byEvents: false,
+        base64: false,
+      },
+    }),
+  });
+}
+
+/**
  * Encerra a sessão da instância na Evolution API (logout do WhatsApp).
  *
  * Importante: isso apenas fecha o socket do Baileys — as credenciais da

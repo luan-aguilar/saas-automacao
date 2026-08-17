@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { createOrConnectInstance, instanceNameFor } from "@/lib/evolution-api";
+import { createOrConnectInstance, instanceNameFor, setWebhook } from "@/lib/evolution-api";
+
+/** Monta a URL pública do webhook de mensagens, autenticada por token na query string. */
+function webhookUrlFor(): string | null {
+  const appUrl = process.env.NEXTAUTH_URL;
+  const token = process.env.WHATSAPP_SERVICE_TOKEN;
+  if (!appUrl || !token) return null;
+  return `${appUrl}/api/webhooks/whatsapp?token=${encodeURIComponent(token)}`;
+}
 
 /**
  * POST /api/whatsapp/connect — dispara o pareamento real via Evolution API v2.
@@ -53,6 +61,22 @@ export async function POST() {
         qrExpiresAt: new Date(Date.now() + 60_000),
       },
     });
+
+    // Registra o webhook de mensagens recebidas na instância — melhor esforço:
+    // se falhar, o pareamento (QR Code) segue normalmente, só o robô não vai
+    // reagir a mensagens automaticamente até uma nova tentativa de conexão.
+    const webhookUrl = webhookUrlFor();
+    if (webhookUrl) {
+      try {
+        await setWebhook(instanceName, webhookUrl);
+      } catch (error) {
+        console.warn("[whatsapp/connect] Falha ao configurar webhook da instância:", error);
+      }
+    } else {
+      console.warn(
+        "[whatsapp/connect] NEXTAUTH_URL e/ou WHATSAPP_SERVICE_TOKEN ausentes — webhook não configurado."
+      );
+    }
 
     return NextResponse.json({ ok: true });
   } catch (error) {
