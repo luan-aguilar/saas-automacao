@@ -72,7 +72,19 @@ async function evolutionFetch(path: string, init?: RequestInit) {
     const message = Array.isArray(messageField)
       ? messageField.join(", ")
       : (messageField as string | undefined) ?? raw ?? `HTTP ${response.status}`;
-    throw new EvolutionApiError(`Evolution API respondeu ${response.status}: ${message}`, response.status);
+
+    // 403 quase sempre significa que o header `apikey` (WHATSAPP_SERVICE_TOKEN)
+    // não bate com a AUTHENTICATION_API_KEY configurada na Evolution API da
+    // VPS — deixamos essa pista explícita no log em vez de um 403 genérico.
+    const hint =
+      response.status === 403
+        ? " — verifique se WHATSAPP_SERVICE_TOKEN (.env) corresponde exatamente à AUTHENTICATION_API_KEY configurada na instância da Evolution API na VPS."
+        : "";
+
+    throw new EvolutionApiError(
+      `Evolution API respondeu ${response.status}: ${message}${hint}`,
+      response.status
+    );
   }
 
   return json;

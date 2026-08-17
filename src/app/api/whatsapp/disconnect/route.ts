@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { deleteInstance, logoutInstance } from "@/lib/evolution-api";
+import { deleteInstance, logoutInstance, EvolutionApiError } from "@/lib/evolution-api";
 
 /**
  * POST /api/whatsapp/disconnect — encerra definitivamente a sessão do
@@ -35,22 +35,29 @@ export async function POST() {
 
   const instanceName = connection.externalSessionId;
 
-  // 1) Logout "gracioso" — fecha o socket ativo do Baileys, se houver um.
+  // 1) e 2) Logout + delete na Evolution API — melhor esforço. Qualquer erro
+  // aqui (403 de token incorreto, 404 de instância já removida, 500 da VPS
+  // instável, etc.) é apenas logado: o SaaS NUNCA deve ficar preso no estado
+  // "Conectado" por causa de uma falha de permissão/instabilidade da VPS. O
+  // passo 3 abaixo (apagar o registro local) roda sempre, independentemente
+  // do resultado destas duas chamadas.
   try {
+    // Logout "gracioso" — fecha o socket ativo do Baileys, se houver um.
     await logoutInstance(instanceName);
   } catch (error) {
-    // Segue em frente mesmo se falhar (ex: instância já estava desconectada).
-    console.error("[whatsapp/disconnect] Falha ao fazer logout na Evolution API:", error);
+    const status = error instanceof EvolutionApiError ? error.status : undefined;
+    console.error(`[whatsapp/disconnect] Falha ao fazer logout na Evolution API (status ${status}):`, error);
   }
 
-  // 2) Delete definitivo — destrói as credenciais/token de sessão salvos, o
-  // que é o que efetivamente evita a reconexão automática alguns segundos
-  // depois. Sem isso, o Baileys reabre a conexão sozinho usando o auth state
-  // em cache e o status volta para "CONNECTED" no próximo polling.
   try {
+    // Delete definitivo — destrói as credenciais/token de sessão salvos, o
+    // que é o que efetivamente evita a reconexão automática alguns segundos
+    // depois. Sem isso, o Baileys reabre a conexão sozinho usando o auth
+    // state em cache e o status volta para "CONNECTED" no próximo polling.
     await deleteInstance(instanceName);
   } catch (error) {
-    console.error("[whatsapp/disconnect] Falha ao apagar a instância na Evolution API:", error);
+    const status = error instanceof EvolutionApiError ? error.status : undefined;
+    console.error(`[whatsapp/disconnect] Falha ao apagar a instância na Evolution API (status ${status}):`, error);
   }
 
   // 3) Remove o registro local por completo (em vez de só resetar os campos)
