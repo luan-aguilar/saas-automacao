@@ -154,14 +154,30 @@ const SUB_SERVICES: Record<"cabelo" | "unhas" | "cilios" | "sobrancelhas", strin
   sobrancelhas: ["Brow Lamination", "Dermaplaning", "Design com Henna", "Epilação de Buço", "Hydra Gloss", "Lash Lifting", "Natural Design"],
 };
 
+const KEYCAP_DIGITS = ["0️⃣", "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
+
 /**
- * Monta a mensagem de texto puro e NUMERADO (1., 2., 3...) enviada logo após
- * a escolha da categoria — já inclui a pergunta final ("Quais sub-serviços
- * você gostaria de agendar?") dentro da própria mensagem, para a IA não
- * precisar mandar essa pergunta de novo como uma segunda mensagem separada.
+ * Converte um número inteiro positivo numa sequência de emojis de "keycap"
+ * (ex: 7 -> "7️⃣", 23 -> "2️⃣3️⃣"). Não existe um emoji nativo para números de
+ * dois dígitos, então a convenção usada (a mesma que a IA recebe instrução de
+ * seguir no prompt) é encadear um emoji por dígito, sem espaço entre eles.
+ */
+function emojiNumber(n: number): string {
+  return String(n)
+    .split("")
+    .map((digit) => KEYCAP_DIGITS[Number(digit)])
+    .join("");
+}
+
+/**
+ * Monta a mensagem de texto puro e NUMERADO (com emojis de número, ex: 1️⃣ 2️⃣
+ * 3️⃣) enviada logo após a escolha da categoria — já inclui a pergunta final
+ * ("Quais sub-serviços você gostaria de agendar?") dentro da própria
+ * mensagem, para a IA não precisar mandar essa pergunta de novo como uma
+ * segunda mensagem separada.
  */
 function subServiceMessage(categoryLabel: string, category: keyof typeof SUB_SERVICES): string {
-  const numbered = SUB_SERVICES[category].map((item, index) => `${index + 1}. ${item}`).join("\n");
+  const numbered = SUB_SERVICES[category].map((item, index) => `${emojiNumber(index + 1)} ${item}`).join("\n");
   return `Ótimo! Esses são os serviços de ${categoryLabel} que trabalhamos:\n\n${numbered}\n\nQuais sub-serviços você gostaria de agendar? Pode me dizer o número ou o nome — se precisar de ajuda, estou à disposição! 😊`;
 }
 
@@ -218,11 +234,11 @@ c) Navegação durante a conversa com você:
 Se a cliente digitar "Voltar" ou "Menu", o SISTEMA (não você) já detecta isso automaticamente e reenvia o menu de categorias original, sempre formatado do mesmo jeito — você nem chega a ser chamada nesses casos. Mas se ela indicar de outra forma que quer trocar de categoria/assunto sem usar essas palavras (ex: citar diretamente "unha" ou "cílios" no meio da conversa), aí sim é você quem responde: confirme a nova categoria e siga a coleta normalmente para ela, seguindo a regra de formatação abaixo (regra "d") se precisar listar os sub-serviços de novo.
 
 d) Formatação de qualquer lista de opções (IMPORTANTE):
-Toda vez que você apresentar uma lista de opções para a cliente escolher — os sub-serviços de uma categoria que ela citou depois de já estar conversando com você, ou as categorias ao reapresentá-las (regra "c"), ou qualquer outra lista — formate SEMPRE em lista numerada, um item por linha, exatamente assim:
-1. Primeiro item
-2. Segundo item
-3. Terceiro item
-NUNCA liste várias opções em um parágrafo corrido separado por vírgulas — no WhatsApp isso vira um bloco de texto gigante e ilegível pelo celular. Isso vale mesmo que o catálogo desta mensagem esteja escrito em vírgulas — a formatação de vírgulas aqui é só para você consultar, não para copiar no formato de resposta.
+Toda vez que você apresentar uma lista de opções para a cliente escolher — os sub-serviços de uma categoria que ela citou depois de já estar conversando com você, ou as categorias ao reapresentá-las (regra "c"), ou qualquer outra lista — formate SEMPRE em lista numerada usando EMOJIS de número, nunca números seguidos de ponto, um item por linha, exatamente assim:
+1️⃣ Primeiro item
+2️⃣ Segundo item
+3️⃣ Terceiro item
+Emojis de cada dígito (0 a 9): 0️⃣ 1️⃣ 2️⃣ 3️⃣ 4️⃣ 5️⃣ 6️⃣ 7️⃣ 8️⃣ 9️⃣. Para números de dois dígitos (10 em diante, ex: a lista de Cabelo tem 23 itens), não existe um emoji único — junte o emoji de cada dígito sem espaço entre eles: 10 = "1️⃣0️⃣", 23 = "2️⃣3️⃣". NUNCA use "1.", "2)", "-" ou qualquer outro estilo de marcador em vez do emoji, e NUNCA liste várias opções em um parágrafo corrido separado por vírgulas — no WhatsApp isso vira um bloco de texto gigante e ilegível pelo celular. Isso vale mesmo que o catálogo desta mensagem esteja escrito em vírgulas — a formatação de vírgulas aqui é só para você consultar, não para copiar no formato de resposta.
 
 e) Confirmação obrigatória dos dados:
 ANTES de disparar a notificação final para o salão, você DEVE exibir esta mensagem de confirmação (preenchendo os colchetes com os dados já coletados) e aguardar a resposta da cliente:
@@ -237,13 +253,24 @@ Está tudo certinho ou gostaria de alterar algo?"
 
 Somente após um "Sim" / "Tudo certo" (ou equivalente) da cliente você deve considerar a coleta concluída e acionar a notificação final para o salão (bloco de alerta). Se a cliente pedir para alterar algo, corrija o dado indicado e repita a confirmação antes de prosseguir.
 
+f) Nomes EXATOS das variáveis (IMPORTANTE — a notificação final para o salão usa estas chaves para preencher o texto; se você usar um nome diferente, o dado NÃO aparece na notificação):
+No campo "variables" do JSON de resposta (ver contrato de formato abaixo), sempre que tiver o dado, preencha usando exatamente estas chaves:
+- \`lead_nome\`: nome completo da cliente, confirmado por ela.
+- \`servico_categoria\`: categoria(s) de serviço escolhidas (ex: "Cabelo, Unhas").
+- \`servico_subtipo\`: subtipo(s) específicos escolhidos dentro da(s) categoria(s) (ex: "Progressiva, Manicure").
+- \`data_hora_agendamento\`: dia e horário de preferência informados pela cliente (texto livre, ex: "Sábado de manhã").
+- \`resumo_ia\`: um resumo curto (1-2 frases) do atendimento, para o salão entender o pedido rapidamente.
+- \`foto_atual_url\` / \`foto_referencia_url\`: já cobertas na regra "b" acima.
+Não se preocupe com \`lead_phone\` nem \`data_atual\` — essas duas já são preenchidas automaticamente pelo sistema, você não precisa (nem consegue) defini-las.
+
 =====================================================
 RESUMO DO QUE VOCÊ PRECISA GARANTIR AO FINAL DA COLETA
 =====================================================
-- Nome da cliente.
-- Categoria(s) e subtipo(s) de serviço escolhidos (podendo ser mais de um).
-- Preferência de dia e horário, respeitando o funcionamento (${SALON_HOURS}).
+- Nome da cliente (variável \`lead_nome\`).
+- Categoria(s) e subtipo(s) de serviço escolhidos, podendo ser mais de um (\`servico_categoria\` / \`servico_subtipo\`).
+- Preferência de dia e horário, respeitando o funcionamento (${SALON_HOURS}) (\`data_hora_agendamento\`).
 - Fotos (quando aplicável a Cabelo), com \`foto_atual_url\` e \`foto_referencia_url\` preenchidas (ou "Não enviada").
+- Um resumo curto do atendimento (\`resumo_ia\`).
 - Confirmação explícita da cliente sobre os dados coletados (regra "e" acima).
 
 Seja calorosa, use poucos emojis e mantenha as mensagens curtas e fáceis de responder pelo celular.`;

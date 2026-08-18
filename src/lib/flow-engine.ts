@@ -406,6 +406,18 @@ export async function processIncomingMessage(params: {
 
   const variables: Record<string, string> = { ...((session.variables as Record<string, string>) ?? {}) };
 
+  // Variáveis "de sistema": preenchidas aqui a cada mensagem, nunca
+  // dependendo da IA acertar o nome da chave ou "saber" a data de hoje —
+  // usadas por blocos de notificação (ex: alerta de lead qualificado, que
+  // referencia {{lead_phone}}/{{data_atual}}). `lead_nome` só recebe o nome
+  // de perfil do WhatsApp como valor inicial (pode ser substituído depois
+  // pelo nome real que a IA coletar da cliente, se for diferente).
+  variables.lead_phone = contactPhone;
+  variables.data_atual = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  if (!variables.lead_nome && contactName) {
+    variables.lead_nome = contactName;
+  }
+
   let currentId: string | null = session.currentNodeId;
 
   if (!currentId) {
