@@ -1,4 +1,7 @@
-export const APP_NAME = "RoboZap SaaS";
+/** Nome curto — usado no cabeçalho do menu lateral e em espaços compactos. */
+export const APP_NAME = "Digital Analytics";
+/** Complemento exibido junto ao nome em telas com mais espaço (login, título da aba). */
+export const APP_TAGLINE = "Atendimento Virtual 24h por dia";
 
 export const FLOW_NODE_LABELS: Record<string, string> = {
   TRIGGER: "Entrada (Trigger)",

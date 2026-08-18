@@ -422,8 +422,24 @@ export async function processIncomingMessage(params: {
       // captura a escolha do contato e avança direto para o node seguinte.
       variables.ultima_resposta = effectiveText;
       currentId = edges.find((e) => e.source === waitingNode.id)?.target ?? null;
+    } else if (waitingNode?.type === "aiResponse") {
+      // Antes de deixar a IA responder, checa se a mensagem bate com alguma
+      // `exitKeywords` do bloco — se bater, o motor devolve o controle
+      // direto para `exitTargetNodeId` (ex: reenviar o menu de categorias
+      // por um node estático, sempre formatado igual) SEM gastar uma
+      // chamada à OpenAI. Ver `AiResponseData.exitKeywords`.
+      const normalizedText = effectiveText.toLowerCase().trim();
+      const matchedKeyword = waitingNode.data.exitKeywords?.find((keyword) =>
+        normalizedText.includes(keyword.toLowerCase().trim())
+      );
+      if (matchedKeyword && waitingNode.data.exitTargetNodeId) {
+        console.log(
+          `[flow-engine] Palavra-chave de saída '${matchedKeyword}' detectada no node '${waitingNode.id}' — devolvendo controle para '${waitingNode.data.exitTargetNodeId}' sem chamar a IA.`
+        );
+        currentId = waitingNode.data.exitTargetNodeId;
+      }
+      // Senão, continua no mesmo node — o executor da IA decide se avança.
     }
-    // Se for 'aiResponse', continua no mesmo node — o executor decide se avança.
   }
 
   let status: FlowSessionStatus = "COMPLETED";

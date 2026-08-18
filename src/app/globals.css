@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    /* Identidade visual RoboZap / Digital Analytics — azul profundo (pin da
+    /* Identidade visual Digital Analytics — azul profundo (pin da
        logo) como cor principal, dourado como toque de destaque pontual, e o
        verde reservado só para estados de sucesso/"Conectado" (antes ele
        coincidia com a cor principal, sem motivo). Tudo via CSS puro — sem

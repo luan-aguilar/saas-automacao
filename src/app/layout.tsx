@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { APP_NAME } from "@/lib/constants";
+import { APP_NAME, APP_TAGLINE } from "@/lib/constants";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: APP_NAME,
+  title: `${APP_NAME} — ${APP_TAGLINE}`,
   description: "Plataforma de gerenciamento e automação de robôs de WhatsApp com IA",
 };
 

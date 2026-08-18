@@ -10,6 +10,19 @@ export type AiResponseData = {
   label: string;
   useGlobalPrompt: boolean;
   customPrompt?: string;
+  /**
+   * Se a resposta do contato CONTIVER uma dessas palavras-chave (comparação
+   * sem diferenciar maiúsculas/minúsculas) enquanto o fluxo estiver pausado
+   * neste bloco aguardando resposta, o motor entrega o controle direto para
+   * `exitTargetNodeId` SEM chamar a IA. Útil para ações que precisam de
+   * formatação 100% consistente (ex: "Menu" reapresentando a lista de
+   * categorias) — um bloco de Mensagem Estática sempre formata igual; a IA,
+   * por ser probabilística, às vezes ignora instruções de formatação do
+   * prompt mesmo quando pedidas explicitamente.
+   */
+  exitKeywords?: string[];
+  /** Node para onde o fluxo vai quando uma das `exitKeywords` é detectada (ver acima). */
+  exitTargetNodeId?: string;
 };
 
 /** Tipo de mensagem interativa: botões simples (até 3) ou lista (até 10 itens). */

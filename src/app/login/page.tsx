@@ -1,13 +1,13 @@
 "use client";
 
+import Image from "next/image";
 import { useFormState, useFormStatus } from "react-dom";
 import { loginAction, type LoginState } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { APP_NAME } from "@/lib/constants";
-import { Bot } from "lucide-react";
+import { APP_NAME, APP_TAGLINE } from "@/lib/constants";
 
 const initialState: LoginState = {};
 
@@ -27,10 +27,16 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-muted/60 via-background to-primary/5 p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-gold text-primary-foreground shadow-sm">
-            <Bot className="h-6 w-6" />
-          </div>
-          <CardTitle>{APP_NAME}</CardTitle>
+          <Image
+            src="/logo-digital-analytics.png"
+            alt={APP_NAME}
+            width={88}
+            height={88}
+            priority
+            className="mb-2 drop-shadow-sm"
+          />
+          <CardTitle className="text-xl">{APP_NAME}</CardTitle>
+          <p className="text-sm font-medium text-primary">{APP_TAGLINE}</p>
           <CardDescription>Entre com seu e-mail e senha para acessar o painel</CardDescription>
         </CardHeader>
         <CardContent>

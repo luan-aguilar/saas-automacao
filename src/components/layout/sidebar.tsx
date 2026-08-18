@@ -5,15 +5,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { APP_NAME } from "@/lib/constants";
-import {
-  LayoutDashboard,
-  Workflow,
-  Settings,
-  QrCode,
-  MessageSquareText,
-  Users,
-  Bot,
-} from "lucide-react";
+import { LayoutDashboard, Workflow, Settings, QrCode, MessageSquareText, Users } from "lucide-react";
 import type { Role } from "@prisma/client";
 
 interface NavItem {
@@ -38,9 +30,7 @@ export function Sidebar({ role }: { role: Role }) {
   return (
     <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-card md:flex">
       <div className="flex h-14 items-center gap-2 border-b border-border px-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-gold text-primary-foreground">
-          <Bot className="h-4 w-4" />
-        </div>
+        <Image src="/logo-digital-analytics.png" alt={APP_NAME} width={28} height={28} className="shrink-0" />
         <span className="font-semibold">{APP_NAME}</span>
       </div>
 
@@ -69,25 +59,12 @@ export function Sidebar({ role }: { role: Role }) {
       </nav>
 
       {role === "MASTER" && (
-        <div className="px-3 pt-3">
+        <div className="border-t border-border p-3">
           <span className="block rounded-md bg-accent px-3 py-2 text-xs font-medium text-muted-foreground">
             Modo Administrador (MASTER)
           </span>
         </div>
       )}
-
-      <div className="flex items-center gap-2 border-t border-border p-3">
-        <Image
-          src="/logo-digital-analytics.png"
-          alt="Digital Analytics"
-          width={20}
-          height={20}
-          className="shrink-0 rounded-sm"
-        />
-        <span className="text-[11px] text-muted-foreground">
-          Powered by <span className="font-medium text-foreground">Digital Analytics</span>
-        </span>
-      </div>
     </aside>
   );
 }

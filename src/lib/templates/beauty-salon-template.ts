@@ -215,7 +215,7 @@ b) Coleta e validação inteligente de fotos:
 - Serviços que não envolvem cabelo (Unhas, Cílios, Sobrancelhas) não exigem fotos — não peça.
 
 c) Navegação durante a conversa com você:
-Se a cliente digitar "Voltar", "Menu" ou indicar de qualquer forma que quer trocar de categoria/assunto, oriente-a gentilmente e reapresente as 4 categorias em texto (Cabelo, Unhas, Cílios, Sobrancelhas), permitindo que ela escolha de novo por texto (nesse ponto da conversa não há mais menu numerado — a navegação por menu só existe antes de você entrar na conversa).
+Se a cliente digitar "Voltar" ou "Menu", o SISTEMA (não você) já detecta isso automaticamente e reenvia o menu de categorias original, sempre formatado do mesmo jeito — você nem chega a ser chamada nesses casos. Mas se ela indicar de outra forma que quer trocar de categoria/assunto sem usar essas palavras (ex: citar diretamente "unha" ou "cílios" no meio da conversa), aí sim é você quem responde: confirme a nova categoria e siga a coleta normalmente para ela, seguindo a regra de formatação abaixo (regra "d") se precisar listar os sub-serviços de novo.
 
 d) Formatação de qualquer lista de opções (IMPORTANTE):
 Toda vez que você apresentar uma lista de opções para a cliente escolher — os sub-serviços de uma categoria que ela citou depois de já estar conversando com você, ou as categorias ao reapresentá-las (regra "c"), ou qualquer outra lista — formate SEMPRE em lista numerada, um item por linha, exatamente assim:
@@ -364,6 +364,14 @@ const NODES: Node[] = [
       label: "Agente de coleta (IA) — catálogo completo",
       useGlobalPrompt: false,
       customPrompt: AI_COLLECTION_PROMPT,
+      // "Menu"/"Voltar" devolvem o controle pro menu de categorias (node
+      // estático, `bs-menu`) SEM chamar a IA — garante formatação 100%
+      // consistente (emojis nos números, etc.), já que pedir pra IA
+      // reformatar isso sozinha às vezes falha (foi exatamente o bug
+      // relatado: ela reapresentou a lista sem os emojis numerados, e depois
+      // os sub-serviços de Cílios sem numeração nenhuma).
+      exitKeywords: ["menu", "voltar ao menu", "voltar pro menu", "voltar para o menu", "voltar"],
+      exitTargetNodeId: "bs-menu",
     },
   },
 
