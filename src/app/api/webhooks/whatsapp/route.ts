@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { processIncomingMessage } from "@/lib/flow-engine";
+import { syncConnectionState } from "@/lib/whatsapp-service";
+import type { EvolutionConnectionState } from "@/lib/evolution-api";
 
 /**
  * POST /api/webhooks/whatsapp — recebido diretamente da Evolution API v2 a
@@ -38,8 +40,20 @@ type EvolutionWebhookBody = {
     key?: EvolutionMessageKey;
     message?: EvolutionMessageContent;
     pushName?: string;
+    // Campos do evento CONNECTION_UPDATE — a Evolution API varia se manda o
+    // estado direto em `data.state` ou aninhado em `data.instance.state`
+    // dependendo da versão, então checamos os dois (ver `extractConnectionState`).
+    state?: string;
+    instance?: { state?: string };
   };
 };
+
+/** Normaliza o estado de conexão do payload de um evento CONNECTION_UPDATE. */
+function extractConnectionState(data: EvolutionWebhookBody["data"]): EvolutionConnectionState {
+  const raw = data?.state ?? data?.instance?.state;
+  if (raw === "open" || raw === "connecting" || raw === "close") return raw;
+  return "unknown";
+}
 
 /** Extrai o texto "efetivo" da mensagem, cobrindo texto puro e respostas a botões/lista. */
 function extractMessageText(message: EvolutionMessageContent | undefined): string {
@@ -95,12 +109,41 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // Auditoria: loga todo payload recebido (inclusive eventos que serão
-  // ignorados abaixo, como CONNECTION_UPDATE) para conferir no log da Vercel
-  // se a Evolution API está de fato chamando este webhook.
+  // Auditoria: loga todo payload recebido para conferir no log da Vercel se a
+  // Evolution API está de fato chamando este webhook.
   console.log("[WEBHOOK RECEBIDO]", JSON.stringify(body));
 
   const eventName = normalizeEventName(body.event);
+
+  // CONNECTION_UPDATE — dispara sempre que o estado da sessão do Baileys
+  // muda, inclusive quando o próprio celular desconecta o dispositivo
+  // vinculado pelo app do WhatsApp (o Baileys recebe isso como um "close" com
+  // motivo de logout). Antes esse evento era simplesmente ignorado, então o
+  // status no banco (e a lista de clientes do MASTER) só se corrigia sozinho
+  // quando alguém abria a tela /whatsapp e o polling cliente-side rodava —
+  // ou seja, nunca, se ninguém estivesse olhando a tela naquele momento.
+  // Tratar aqui deixa a atualização automática e imediata, independente de
+  // qualquer aba aberta no navegador.
+  if (eventName === "CONNECTION_UPDATE") {
+    const instanceName = body.instance;
+    const state = extractConnectionState(body.data);
+
+    if (instanceName && state !== "unknown") {
+      try {
+        const connection = await prisma.whatsappConnection.findFirst({
+          where: { externalSessionId: instanceName },
+        });
+        if (connection) {
+          await syncConnectionState(connection.userId, connection, state);
+        }
+      } catch (error) {
+        console.error("[webhook/whatsapp] Erro ao sincronizar CONNECTION_UPDATE:", error);
+      }
+    }
+
+    return NextResponse.json({ ok: true });
+  }
+
   if (eventName !== "MESSAGES_UPSERT") {
     return NextResponse.json({ ok: true });
   }

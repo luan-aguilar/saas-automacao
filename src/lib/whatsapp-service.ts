@@ -5,12 +5,15 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import type { WhatsappConnection } from "@prisma/client";
 import {
   sendTextMessage,
   sendButtonsMessage,
   sendListMessage,
+  fetchInstancePhoneNumber,
   instanceNameFor,
   type EvolutionListItem,
+  type EvolutionConnectionState,
 } from "@/lib/evolution-api";
 
 /** Resolve o nome de instância do tenant e avisa (sem lançar) se ela não estiver conectada. */
@@ -87,4 +90,57 @@ export async function sendWhatsappList(
     console.error("[whatsapp-service] Erro ao enviar mensagem de lista:", errorMessage);
     return { ok: false, error: errorMessage };
   }
+}
+
+/**
+ * Aplica ao registro do tenant uma mudança de estado de conexão vinda da
+ * Evolution API — usada tanto pelo polling client-side (`GET
+ * /api/whatsapp/status`, a cada ~3s enquanto a tela /whatsapp estiver
+ * aberta) quanto pelo push do webhook (`CONNECTION_UPDATE`, disparado pela
+ * Evolution API assim que o Baileys detecta a mudança, inclusive quando o
+ * próprio celular desconecta o dispositivo vinculado — sem depender de
+ * ninguém estar com a tela /whatsapp aberta no navegador para "descobrir"
+ * isso). As duas chamadas compartilham esta mesma lógica de transição de
+ * status para nunca divergir sobre o que cada estado da Evolution API
+ * significa para o app.
+ */
+export async function syncConnectionState(
+  userId: string,
+  connection: WhatsappConnection,
+  state: EvolutionConnectionState
+): Promise<WhatsappConnection> {
+  if (state === "open") {
+    const phoneNumber =
+      connection.phoneNumber ??
+      (connection.externalSessionId ? await fetchInstancePhoneNumber(connection.externalSessionId) : null);
+
+    return prisma.whatsappConnection.update({
+      where: { userId },
+      data: {
+        status: "CONNECTED",
+        phoneNumber: phoneNumber ?? connection.phoneNumber,
+        qrCode: null,
+        lastConnectedAt: new Date(),
+      },
+    });
+  }
+
+  if (state === "close" && connection.status !== "DISCONNECTED") {
+    return prisma.whatsappConnection.update({
+      where: { userId },
+      data: { status: "DISCONNECTED", qrCode: null, lastDisconnectedAt: new Date() },
+    });
+  }
+
+  if (state === "connecting" && connection.status === "CONNECTED") {
+    // A instância caiu e a Evolution API está tentando reconectar sozinha.
+    return prisma.whatsappConnection.update({
+      where: { userId },
+      data: { status: "CONNECTING" },
+    });
+  }
+
+  // Para "connecting" com status já QR_PENDING/CONNECTING, ou "unknown",
+  // mantemos como está — não há nada seguro a fazer com esses estados.
+  return connection;
 }
