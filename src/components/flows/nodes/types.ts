@@ -35,6 +35,17 @@ export type StaticMessageData = {
   listButtonText?: string;
   /** Usado quando interactiveType === "list": itens da lista (até 10). */
   listItems?: StaticMessageListItem[];
+  /**
+   * Quando true, mesmo uma mensagem em TEXTO PURO (sem botões/lista) pausa o
+   * fluxo e espera a próxima resposta do contato, em vez de seguir
+   * automaticamente para o próximo node. Útil quando mensagens interativas
+   * (botões/lista) não são confiáveis — a Evolution API/Baileys tem bugs
+   * conhecidos de renderização e até de entrega de mensagens de botão (ficam
+   * presas em "SERVER_ACK" e nunca chegam ao destinatário) — permitindo
+   * simular um "menu" perguntado por texto simples (ex: "responda com 1, 2
+   * ou 3") sem depender desses recursos frágeis.
+   */
+  waitForReply?: boolean;
 };
 
 export type ConditionData = {

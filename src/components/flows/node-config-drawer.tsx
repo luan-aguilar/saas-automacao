@@ -105,6 +105,24 @@ export function NodeConfigDrawer({
               />
             </div>
 
+            <label className="flex items-start gap-2 rounded-md border border-border p-2.5 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={data.waitForReply ?? false}
+                onChange={(e) => update({ waitForReply: e.target.checked })}
+              />
+              <span>
+                Aguardar resposta do cliente antes de continuar
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  Só tem efeito se a mensagem for texto puro (sem botões/lista configurados). Use isso
+                  como um "menu por texto" (ex: "responda com 1, 2 ou 3") quando não quiser depender de
+                  botões/lista — a Evolution API/Baileys tem bugs conhecidos de renderização e até de
+                  entrega dessas mensagens interativas.
+                </span>
+              </span>
+            </label>
+
             <div className="space-y-1.5">
               <Label>Tipo de mensagem interativa</Label>
               <div className="grid grid-cols-2 gap-2">

@@ -89,9 +89,10 @@ export async function executeAlertNotificationNode(
 
 /**
  * Envia a mensagem do bloco "Mensagem Estática" no formato configurado
- * (texto puro, botões ou lista). Mensagens interativas (botões/lista) pausam
- * o fluxo — a resposta do contato é capturada como `ultima_resposta` pelo
- * orquestrador na próxima mensagem recebida.
+ * (texto puro, botões ou lista). Mensagens interativas (botões/lista) sempre
+ * pausam o fluxo; texto puro só pausa se `data.waitForReply` estiver
+ * marcado. Em qualquer um desses casos de pausa, a resposta do contato é
+ * capturada como `ultima_resposta` pelo orquestrador na próxima mensagem.
  */
 async function executeStaticMessageNode(data: StaticMessageData, context: FlowContext): Promise<StepResult> {
   const text = interpolateVariables(data.message, context.variables);
@@ -113,9 +114,13 @@ async function executeStaticMessageNode(data: StaticMessageData, context: FlowCo
     return result.ok ? { ok: true, next: "wait", sentText: text } : { ok: false, error: result.error };
   }
 
-  // Sem botões/lista configurados — texto puro, segue automaticamente para o próximo node.
+  // Sem botões/lista configurados — texto puro. Por padrão segue automaticamente
+  // para o próximo node; se `waitForReply` estiver marcado, pausa aqui e espera
+  // a próxima resposta do contato (útil como "menu por texto" quando mensagens
+  // interativas não são confiáveis — ver comentário no tipo `StaticMessageData`).
   const result = await sendWhatsappMessage(context.userId, context.contactPhone, text);
-  return result.ok ? { ok: true, next: "continue", sentText: text } : { ok: false, error: result.error };
+  if (!result.ok) return { ok: false, error: result.error };
+  return { ok: true, next: data.waitForReply ? "wait" : "continue", sentText: text };
 }
 
 /**

@@ -11,30 +11,44 @@
  * ---------------------------------------------------------------------------
  * DIVISÃO DE RESPONSABILIDADES (importante para quem for editar este arquivo)
  * ---------------------------------------------------------------------------
- * Historicamente esse template usava um único node de "Lista" do WhatsApp
- * para mostrar as categorias — mas mensagens de Lista têm um bug conhecido e
- * não corrigido na Evolution API (erro `this.isZero is not a function`,
- * reproduzido em v2.3.7 E v2.3.6, issue fechada como "not planned" pelos
- * mantenedores: github.com/EvolutionAPI/evolution-api/issues/2390). Botões
- * (`sendButtons`) funcionam normalmente, mas têm limite de 3 opções — por
- * isso as 4 categorias são paginadas em duas telas de botões que se
- * conectam num loop (ver `NAVEGAÇÃO DE CATEGORIAS` abaixo).
+ * Este template já passou por DUAS gerações de navegação de categorias, as
+ * duas abandonadas por bugs reais e comprovados em teste ao vivo na
+ * Evolution API/Baileys — por isso a versão atual usa TEXTO PURO puro e
+ * simples, sem nenhum recurso "bonito" de mensagem interativa:
+ *
+ *   1ª geração — node de "Lista" do WhatsApp: erro `this.isZero is not a
+ *      function` ao enviar, reproduzido em v2.3.7 E v2.3.6, issue fechada
+ *      como "not planned" pelos mantenedores
+ *      (github.com/EvolutionAPI/evolution-api/issues/2390).
+ *   2ª geração — botões (`sendButtons`): a chamada retorna sucesso (201) e
+ *      chega a ser aceita pelo servidor do WhatsApp (`SERVER_ACK`), mas a
+ *      mensagem às vezes nunca é entregue ao destinatário — nem no celular,
+ *      não é só um problema de renderização no WhatsApp Web/Desktop. Como o
+ *      texto de instrução ficava embutido na própria mensagem de botão, a
+ *      cliente não via nem sequer o convite pra digitar uma alternativa.
+ *
+ * Por isso a navegação de categorias hoje é um MENU NUMERADO EM TEXTO PURO
+ * (`staticMessage` com `waitForReply: true` — ver `StaticMessageData` em
+ * `src/components/flows/nodes/types.ts` — permite que uma mensagem de texto
+ * simples pause o fluxo esperando resposta, sem depender de botões/lista).
+ * Texto puro é o formato mais básico e confiável do WhatsApp.
  *
  * O fluxo é dividido em três camadas:
  *
- * 1) NAVEGAÇÃO DE CATEGORIAS (botões, 2 páginas) — `bs-pagina1`/`bs-pagina2`.
- *    Página 1: Cabelo | Unhas | Mais opções ➡️
- *    Página 2: Cílios | Sobrancelhas | ⬅️ Voltar
+ * 1) NAVEGAÇÃO DE CATEGORIAS (texto puro, 2 páginas) — `bs-pagina1`/`bs-pagina2`.
+ *    Página 1: 1-Cabelo | 2-Unhas | 3-Mais opções
+ *    Página 2: 1-Cílios | 2-Sobrancelhas | 3-Voltar
  *    "Mais opções" e "Voltar" ficam num loop entre as duas páginas até a
  *    cliente escolher uma categoria de verdade.
  *
- *    IMPORTANTE: a cliente pode digitar qualquer texto livre em vez de
- *    clicar num botão — a cadeia de condições checa explicitamente CADA
- *    uma das 3 opções da página (nunca "por eliminação"), e se nenhuma
- *    bater, cai num node de retry (`bs-pagina1-retry`/`bs-pagina2-retry`)
- *    que reenvia os mesmos botões. Antes desta correção, uma resposta que
- *    não batia com nada era tratada por eliminação binária como se fosse a
- *    última opção da página (ex: "bom dia" virava "Unhas" por engano).
+ *    IMPORTANTE: a cliente pode responder tanto com o número quanto com o
+ *    nome da categoria por extenso — a cadeia de condições checa
+ *    explicitamente CADA uma das opções (nunca "por eliminação"), e se
+ *    nenhuma bater, cai num node de retry (`bs-pagina1-retry`/
+ *    `bs-pagina2-retry`) que reenvia o mesmo menu. Antes desta correção, uma
+ *    resposta que não batia com nada era tratada por eliminação binária como
+ *    se fosse a última opção da página (ex: "bom dia" virava "Unhas" por
+ *    engano).
  *
  * 2) SUB-SERVIÇOS EM TEXTO PURO (`bs-sub-*`) — assim que uma categoria é
  *    escolhida, envia o catálogo completo daquela categoria como texto
@@ -272,9 +286,14 @@ const NODES: Node[] = [
     data: { label: "Primeira mensagem", triggerType: "FIRST_MESSAGE" },
   },
 
-  // PÁGINA 1 de categorias (botões, máx. 3) — Cabelo, Unhas e "Mais opções"
-  // pra ver a página 2. Botões funcionam de verdade na Evolution API;
-  // mensagens de Lista têm um bug conhecido (ver comentário no topo do arquivo).
+  // PÁGINA 1 de categorias — TEXTO PURO com `waitForReply: true` (menu
+  // numerado), não mensagem interativa. Testado ao vivo: botões da Evolution
+  // API/Baileys não só falham em renderizar no WhatsApp Web/Desktop, como
+  // ficam presos em "SERVER_ACK" e às vezes NUNCA chegam nem no celular —
+  // e como o texto de instrução fica embutido na própria mensagem de botão,
+  // a cliente não via nem sequer o convite pra digitar o número. Texto puro
+  // é o formato mais básico e confiável do WhatsApp, por isso virou o
+  // caminho principal (não só um fallback).
   {
     id: "bs-pagina1",
     type: "staticMessage",
@@ -282,55 +301,48 @@ const NODES: Node[] = [
     data: {
       label: "Categorias — Página 1",
       message:
-        "Olá, maravilhosa! 🤩 Seja bem-vinda ao Home Concept! Escolha abaixo a categoria de serviço que você procura:\n\n_Não está vendo os botões? Responda com o número:_\n1️⃣ Cabelo   2️⃣ Unhas   3️⃣ Mais opções",
-      interactiveType: "buttons",
-      buttons: ["💇‍♀️ Cabelo", "💅 Unhas", "Mais opções ➡️"],
+        "Olá, maravilhosa! 🤩 Seja bem-vinda ao Home Concept! Responda com o número da categoria que você procura:\n\n1️⃣ Cabelo\n2️⃣ Unhas\n3️⃣ Mais opções",
+      buttons: [],
+      waitForReply: true,
     },
   },
 
-  conditionNode("bs-cond-pag1-maisopcoes", { x: 600, y: 320 }, "Clicou em 'Mais opções'?", "Mais opções"),
+  conditionNode("bs-cond-pag1-maisopcoes", { x: 600, y: 320 }, "Digitou 'Mais opções' ou '3'?", "Mais opções"),
   conditionNode("bs-cond-pag1-cabelo", { x: 380, y: 460 }, "Escolheu Cabelo?", "Cabelo"),
   conditionNode("bs-cond-pag1-unhas", { x: 200, y: 600 }, "Escolheu Unhas?", "Unhas"),
 
-  // Fallback por número — os botões do WhatsApp têm um bug conhecido do
-  // Baileys/Evolution API onde não renderizam no WhatsApp Web/Desktop
-  // (mensagem "Não foi possível carregar a mensagem"), mesmo funcionando
-  // normalmente no celular. Antes de desistir e cair no retry, checa se a
-  // cliente digitou o número da opção (1/2/3) em vez de clicar no botão.
+  // Fallback por número — cobre tanto quem digita "Cabelo"/"Unhas" por
+  // extenso (checado acima) quanto quem só manda o número da opção.
   conditionNode("bs-cond-pag1-digito1", { x: 20, y: 680 }, "Digitou '1' (Cabelo)?", "1", "EQUALS"),
   conditionNode("bs-cond-pag1-digito2", { x: -160, y: 720 }, "Digitou '2' (Unhas)?", "2", "EQUALS"),
   conditionNode("bs-cond-pag1-digito3", { x: -340, y: 760 }, "Digitou '3' (Mais opções)?", "3", "EQUALS"),
 
-  // Retry da página 1 — cai aqui quando a resposta não bateu com NENHUM dos 3
-  // botões nem com o número correspondente (ex: a cliente digitou um texto
-  // livre qualquer). Reenvia as mesmas opções, em vez de "adivinhar" a
-  // categoria por eliminação (foi exatamente esse bug que fez um "bom dia"
-  // ser tratado como se fosse "Unhas" antes desta correção).
+  // Retry da página 1 — cai aqui quando a resposta não bateu com NENHUMA das
+  // 3 opções (nem por nome, nem por número). Reenvia o mesmo menu, em vez de
+  // "adivinhar" a categoria por eliminação (foi exatamente esse bug que fez
+  // um "bom dia" ser tratado como se fosse "Unhas" antes desta correção).
   {
     id: "bs-pagina1-retry",
     type: "staticMessage",
     position: { x: -340, y: 900 },
     data: {
       label: "Categorias — Página 1 (não entendi)",
-      message:
-        "Desculpe, não entendi 🙏 Toque em uma das opções abaixo ou responda com o número:\n1️⃣ Cabelo   2️⃣ Unhas   3️⃣ Mais opções",
-      interactiveType: "buttons",
-      buttons: ["💇‍♀️ Cabelo", "💅 Unhas", "Mais opções ➡️"],
+      message: "Desculpe, não entendi 🙏 Por favor, responda só com o número:\n1️⃣ Cabelo\n2️⃣ Unhas\n3️⃣ Mais opções",
+      buttons: [],
+      waitForReply: true,
     },
   },
 
-  // PÁGINA 2 de categorias — Cílios, Sobrancelhas e "Voltar" pra página 1
-  // (loop entre as duas páginas até a cliente escolher uma categoria).
+  // PÁGINA 2 de categorias — mesmo formato de texto puro da página 1.
   {
     id: "bs-pagina2",
     type: "staticMessage",
     position: { x: 820, y: 460 },
     data: {
       label: "Categorias — Página 2",
-      message:
-        "Mais categorias disponíveis:\n\n_Não está vendo os botões? Responda com o número:_\n1️⃣ Cílios   2️⃣ Sobrancelhas   3️⃣ Voltar",
-      interactiveType: "buttons",
-      buttons: ["👁️ Cílios", "✏️ Sobrancelhas", "⬅️ Voltar"],
+      message: "Mais categorias disponíveis — responda com o número:\n\n1️⃣ Cílios\n2️⃣ Sobrancelhas\n3️⃣ Voltar",
+      buttons: [],
+      waitForReply: true,
     },
   },
 
@@ -350,10 +362,9 @@ const NODES: Node[] = [
     position: { x: 1760, y: 1220 },
     data: {
       label: "Categorias — Página 2 (não entendi)",
-      message:
-        "Desculpe, não entendi 🙏 Toque em uma das opções abaixo ou responda com o número:\n1️⃣ Cílios   2️⃣ Sobrancelhas   3️⃣ Voltar",
-      interactiveType: "buttons",
-      buttons: ["👁️ Cílios", "✏️ Sobrancelhas", "⬅️ Voltar"],
+      message: "Desculpe, não entendi 🙏 Por favor, responda só com o número:\n1️⃣ Cílios\n2️⃣ Sobrancelhas\n3️⃣ Voltar",
+      buttons: [],
+      waitForReply: true,
     },
   },
 
