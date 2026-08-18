@@ -24,8 +24,11 @@ export const authConfig = {
 
       if (!isLoggedIn) return false;
 
-      // Somente MASTER pode acessar /clientes
-      if (pathname.startsWith("/clients") && auth.user.role !== "MASTER") {
+      // Somente MASTER pode acessar /clients e /templates
+      if (
+        (pathname.startsWith("/clients") || pathname.startsWith("/templates")) &&
+        auth.user.role !== "MASTER"
+      ) {
         return Response.redirect(new URL("/dashboard", request.nextUrl));
       }
 

@@ -28,7 +28,7 @@ import { AiResponseNodeComponent } from "./nodes/ai-response-node";
 import { StaticMessageNodeComponent } from "./nodes/static-message-node";
 import { ConditionNodeComponent } from "./nodes/condition-node";
 import { AlertNotificationNodeComponent } from "./nodes/alert-notification-node";
-import { createBeautySalonTemplate, BEAUTY_SALON_TEMPLATE_NAME } from "@/lib/templates/beauty-salon-template";
+import { getTemplateDefinition } from "@/lib/templates/registry";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Save, Play, Pause, Undo2, Redo2, AlertTriangle, Sparkles } from "lucide-react";
@@ -92,12 +92,16 @@ const initialNodes: Node[] = [
 
 const initialEdges: Edge[] = [{ id: "e-start-welcome", source: "start", target: "welcome" }];
 
+type AvailableTemplate = { key: string; name: string; description: string };
+
 interface FlowBuilderProps {
   flowId: string;
   flowName: string;
   initialNodes?: Node[];
   initialEdges?: Edge[];
   isActive: boolean;
+  /** Templates que este usuário tem permissão de carregar (ver `/templates`, MASTER-only). Vazio = nenhum. */
+  availableTemplates: AvailableTemplate[];
 }
 
 type HistorySnapshot = { nodes: Node[]; edges: Edge[] };
@@ -126,6 +130,7 @@ function FlowBuilderInner({
   initialNodes: initNodes,
   initialEdges: initEdges,
   isActive,
+  availableTemplates,
 }: FlowBuilderProps) {
   const startNodes = initNodes?.length ? initNodes : initialNodes;
   const startEdges = initEdges?.length ? initEdges : initialEdges;
@@ -135,6 +140,7 @@ function FlowBuilderInner({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [name, setName] = useState(flowName);
   const [active, setActive] = useState(isActive);
+  const [selectedTemplateKey, setSelectedTemplateKey] = useState(availableTemplates[0]?.key ?? "");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -277,13 +283,16 @@ function FlowBuilderInner({
     setSelectedNodeId(null);
   }
 
-  function handleLoadBeautySalonTemplate() {
+  function handleLoadTemplate() {
+    const template = getTemplateDefinition(selectedTemplateKey);
+    if (!template) return;
+
     const proceed = window.confirm(
-      `Carregar o template "${BEAUTY_SALON_TEMPLATE_NAME}"?\n\nIsso substitui todos os blocos e conexões atuais deste fluxo no canvas (a substituição só é salva de fato quando você clicar em "Salvar fluxo").`
+      `Carregar o template "${template.name}"?\n\nIsso substitui todos os blocos e conexões atuais deste fluxo no canvas (a substituição só é salva de fato quando você clicar em "Salvar fluxo").`
     );
     if (!proceed) return;
 
-    const { nodes: templateNodes, edges: templateEdges } = createBeautySalonTemplate();
+    const { nodes: templateNodes, edges: templateEdges } = template.load();
     setSelectedNodeId(null);
     setSaveError(null);
     setNodes(templateNodes);
@@ -358,10 +367,26 @@ function FlowBuilderInner({
                 Salvo às {savedAt.toLocaleTimeString("pt-BR")}
               </span>
             )}
-            <Button variant="outline" size="sm" onClick={handleLoadBeautySalonTemplate}>
-              <Sparkles className="h-3.5 w-3.5" />
-              Carregar Template: Salão de Beleza
-            </Button>
+            {availableTemplates.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <select
+                  value={selectedTemplateKey}
+                  onChange={(e) => setSelectedTemplateKey(e.target.value)}
+                  title="Escolha um template para carregar"
+                  className="flex h-8 rounded-md border border-border bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                >
+                  {availableTemplates.map((t) => (
+                    <option key={t.key} value={t.key} title={t.description}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+                <Button variant="outline" size="sm" onClick={handleLoadTemplate}>
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Carregar Template
+                </Button>
+              </div>
+            )}
             <Button variant={active ? "default" : "outline"} size="sm" onClick={() => setActive((v) => !v)}>
               {active ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
               {active ? "Ativo" : "Inativo"}

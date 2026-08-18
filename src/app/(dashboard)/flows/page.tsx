@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { FlowBuilder } from "@/components/flows/flow-builder";
+import { getAvailableTemplates } from "@/lib/templates/access";
 import type { Node, Edge } from "@xyflow/react";
 
 // Garante que sempre exista pelo menos um fluxo para o usuário editar,
@@ -37,7 +38,10 @@ async function getOrCreateDefaultFlow(userId: string) {
 
 export default async function FlowsPage() {
   const session = await auth();
-  const flow = await getOrCreateDefaultFlow(session!.user.id);
+  const [flow, availableTemplates] = await Promise.all([
+    getOrCreateDefaultFlow(session!.user.id),
+    getAvailableTemplates(session!.user.id, session!.user.role),
+  ]);
 
   return (
     <div className="h-full">
@@ -47,6 +51,7 @@ export default async function FlowsPage() {
         initialNodes={(flow.nodes as unknown as Node[]) ?? []}
         initialEdges={(flow.edges as unknown as Edge[]) ?? []}
         isActive={flow.isActive}
+        availableTemplates={availableTemplates}
       />
     </div>
   );

@@ -95,11 +95,43 @@ model User {
   chats              Chat[]
   auditLogs          AuditLog[]
 
+  // Templates pré-definidos (Salão de Beleza, Energia Solar, etc.) liberados
+  // para este cliente pelo MASTER — ver `TemplateAccess`.
+  templateAccess TemplateAccess[] @relation("TemplateAccessUser")
+  templateGrants TemplateAccess[] @relation("TemplateAccessGrantedBy")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([role])
   @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Acesso a templates pré-definidos (Salão de Beleza, Energia Solar, etc.)
+// ---------------------------------------------------------------------------
+// Os templates em si são definidos em código (`src/lib/templates/registry.ts`),
+// não no banco — este modelo só controla QUAIS clientes podem carregar QUAL
+// template no Construtor de Fluxos. O MASTER sempre tem acesso a todos
+// (não precisa de linha aqui); um CLIENTE só vê o botão de um template no
+// Construtor se existir uma linha liberando aquele `templateKey` para ele.
+
+model TemplateAccess {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation("TemplateAccessUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Chave estável do template no registry (ex: "beauty-salon"), não um FK —
+  // o catálogo de templates vive em código, não em tabela própria.
+  templateKey String
+
+  grantedById String?
+  grantedBy   User?   @relation("TemplateAccessGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, templateKey])
+  @@index([userId])
 }
 
 // ---------------------------------------------------------------------------
