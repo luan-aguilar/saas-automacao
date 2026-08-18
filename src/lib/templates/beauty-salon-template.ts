@@ -231,7 +231,7 @@ b) Coleta e validação inteligente de fotos:
 - Serviços que não envolvem cabelo (Unhas, Cílios, Sobrancelhas) não exigem fotos — não peça.
 
 c) Navegação durante a conversa com você:
-Se a cliente digitar "Voltar" ou "Menu", o SISTEMA (não você) já detecta isso automaticamente e reenvia o menu de categorias original, sempre formatado do mesmo jeito — você nem chega a ser chamada nesses casos. Mas se ela indicar de outra forma que quer trocar de categoria/assunto sem usar essas palavras (ex: citar diretamente "unha" ou "cílios" no meio da conversa), aí sim é você quem responde: confirme a nova categoria e siga a coleta normalmente para ela, seguindo a regra de formatação abaixo (regra "d") se precisar listar os sub-serviços de novo.
+Se a cliente digitar "Voltar", "Menu", ou pedir para reiniciar/recomeçar o atendimento do zero (de qualquer forma parecida com essas), o SISTEMA (não você) já detecta isso automaticamente e reenvia o menu de categorias original, sempre formatado do mesmo jeito — você nem chega a ser chamada nesses casos. Mas se ela indicar de outra forma que quer trocar de categoria/assunto sem usar essas palavras (ex: citar diretamente "unha" ou "cílios" no meio da conversa), aí sim é você quem responde: confirme a nova categoria e siga a coleta normalmente para ela, seguindo a regra de formatação abaixo (regra "d") se precisar listar os sub-serviços de novo.
 
 d) Formatação de qualquer lista de opções (IMPORTANTE):
 Toda vez que você apresentar uma lista de opções para a cliente escolher — os sub-serviços de uma categoria que ela citou depois de já estar conversando com você, ou as categorias ao reapresentá-las (regra "c"), ou qualquer outra lista — formate SEMPRE em lista numerada usando EMOJIS de número, nunca números seguidos de ponto, um item por linha, exatamente assim:
@@ -318,10 +318,10 @@ function edge(id: string, source: string, target: string, sourceHandle?: "yes" |
 }
 
 const MENU_MESSAGE =
-  "Olá, maravilhosa! 🤩 Seja bem-vinda ao Home Concept! Responda com o número do que você procura:\n\n1️⃣ Cabelo\n2️⃣ Unhas\n3️⃣ Cílios\n4️⃣ Sobrancelhas\n5️⃣ Outros assuntos";
+  "Olá, maravilhosa! 🤩 Seja bem-vinda ao Home Concept! Responda com o número do que você procura:\n\n1️⃣ Cabelo 💇‍♀️\n2️⃣ Unhas 💅\n3️⃣ Cílios 👁️\n4️⃣ Sobrancelhas ✏️\n5️⃣ Outros assuntos";
 
 const MENU_RETRY_MESSAGE =
-  "Desculpe, não entendi 🙏 Por favor, responda só com o número:\n1️⃣ Cabelo\n2️⃣ Unhas\n3️⃣ Cílios\n4️⃣ Sobrancelhas\n5️⃣ Outros assuntos";
+  "Desculpe, não entendi 🙏 Por favor, responda só com o número:\n1️⃣ Cabelo 💇‍♀️\n2️⃣ Unhas 💅\n3️⃣ Cílios 👁️\n4️⃣ Sobrancelhas ✏️\n5️⃣ Outros assuntos";
 
 const NODES: Node[] = [
   // TRIGGER — dispara em qualquer primeira mensagem recebida.
@@ -397,7 +397,20 @@ const NODES: Node[] = [
       // reformatar isso sozinha às vezes falha (foi exatamente o bug
       // relatado: ela reapresentou a lista sem os emojis numerados, e depois
       // os sub-serviços de Cílios sem numeração nenhuma).
-      exitKeywords: ["menu", "voltar ao menu", "voltar pro menu", "voltar para o menu", "voltar"],
+      exitKeywords: [
+        "menu",
+        "voltar ao menu",
+        "voltar pro menu",
+        "voltar para o menu",
+        "voltar",
+        "reiniciar",
+        "recomeçar",
+        "começar de novo",
+        "começar do zero",
+        "do zero",
+        "voltar ao início",
+        "voltar pro início",
+      ],
       exitTargetNodeId: "bs-menu",
     },
   },

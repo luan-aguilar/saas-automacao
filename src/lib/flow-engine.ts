@@ -431,27 +431,17 @@ export async function processIncomingMessage(params: {
     const waitingNode = nodes.find((n) => n.id === currentId);
     if (waitingNode && waitingNode.type !== "aiResponse") {
       // Estava esperando resposta a uma mensagem estática interativa (botões/lista):
-      // captura a escolha do contato e avança direto para o node seguinte.
+      // captura a escolha do contato e avança direto para o node seguinte —
+      // que pode ser o próprio node de IA (ex: catálogo de sub-serviços ->
+      // agente de coleta). A checagem de `exitKeywords` para esse caso
+      // acontece de forma genérica no início do loop principal abaixo, não
+      // aqui, já que só quando sabemos que o próximo node É de fato uma IA é
+      // que faz sentido aplicá-la.
       variables.ultima_resposta = effectiveText;
       currentId = edges.find((e) => e.source === waitingNode.id)?.target ?? null;
-    } else if (waitingNode?.type === "aiResponse") {
-      // Antes de deixar a IA responder, checa se a mensagem bate com alguma
-      // `exitKeywords` do bloco — se bater, o motor devolve o controle
-      // direto para `exitTargetNodeId` (ex: reenviar o menu de categorias
-      // por um node estático, sempre formatado igual) SEM gastar uma
-      // chamada à OpenAI. Ver `AiResponseData.exitKeywords`.
-      const normalizedText = effectiveText.toLowerCase().trim();
-      const matchedKeyword = waitingNode.data.exitKeywords?.find((keyword) =>
-        normalizedText.includes(keyword.toLowerCase().trim())
-      );
-      if (matchedKeyword && waitingNode.data.exitTargetNodeId) {
-        console.log(
-          `[flow-engine] Palavra-chave de saída '${matchedKeyword}' detectada no node '${waitingNode.id}' — devolvendo controle para '${waitingNode.data.exitTargetNodeId}' sem chamar a IA.`
-        );
-        currentId = waitingNode.data.exitTargetNodeId;
-      }
-      // Senão, continua no mesmo node — o executor da IA decide se avança.
     }
+    // Se o node de espera já for do tipo aiResponse, `currentId` permanece o
+    // mesmo — a IA decide se avança (via `done`) ou continua esperando.
   }
 
   let status: FlowSessionStatus = "COMPLETED";
@@ -465,6 +455,31 @@ export async function processIncomingMessage(params: {
       status = "COMPLETED";
       finalNodeId = null;
       break;
+    }
+
+    // Checagem GENÉRICA de `exitKeywords`: roda toda vez que o próximo node a
+    // executar é uma IA, não importa se a sessão já estava pausada nela
+    // (retomada) ou se acabou de chegar através de outro node (ex: acabou de
+    // capturar a resposta de um catálogo estático de sub-serviços e o
+    // próximo node na aresta já é a IA, no mesmo turno). Sem essa checagem
+    // aqui, uma mensagem como "Menu" digitada logo após um catálogo de
+    // sub-serviços seria repassada pra IA como se fosse a escolha do
+    // serviço, e ela tentaria (sem sucesso garantido) reformatar o menu
+    // sozinha — foi exatamente o bug relatado, mesmo já existindo a
+    // checagem no ponto de retomada.
+    if (node.type === "aiResponse" && node.data.exitKeywords?.length) {
+      const normalizedText = effectiveText.toLowerCase().trim();
+      const matchedKeyword = node.data.exitKeywords.find((keyword) =>
+        normalizedText.includes(keyword.toLowerCase().trim())
+      );
+      if (matchedKeyword && node.data.exitTargetNodeId) {
+        console.log(
+          `[flow-engine] Palavra-chave de saída '${matchedKeyword}' detectada no node '${node.id}' — devolvendo controle para '${node.data.exitTargetNodeId}' sem chamar a IA.`
+        );
+        currentId = node.data.exitTargetNodeId;
+        finalNodeId = currentId;
+        continue;
+      }
     }
 
     const context: FlowContext = { userId, contactPhone, variables, incomingText: effectiveText };
