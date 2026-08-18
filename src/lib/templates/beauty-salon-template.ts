@@ -11,67 +11,65 @@
  * ---------------------------------------------------------------------------
  * DIVISÃO DE RESPONSABILIDADES (importante para quem for editar este arquivo)
  * ---------------------------------------------------------------------------
- * Este template já passou por DUAS gerações de navegação de categorias, as
- * duas abandonadas por bugs reais e comprovados em teste ao vivo na
- * Evolution API/Baileys — por isso a versão atual usa TEXTO PURO puro e
- * simples, sem nenhum recurso "bonito" de mensagem interativa:
+ * Este template já passou por duas gerações de navegação abandonadas por
+ * bugs reais e comprovados em teste ao vivo na Evolution API/Baileys:
  *
  *   1ª geração — node de "Lista" do WhatsApp: erro `this.isZero is not a
- *      function` ao enviar, reproduzido em v2.3.7 E v2.3.6, issue fechada
- *      como "not planned" pelos mantenedores
- *      (github.com/EvolutionAPI/evolution-api/issues/2390).
- *   2ª geração — botões (`sendButtons`): a chamada retorna sucesso (201) e
- *      chega a ser aceita pelo servidor do WhatsApp (`SERVER_ACK`), mas a
- *      mensagem às vezes nunca é entregue ao destinatário — nem no celular,
- *      não é só um problema de renderização no WhatsApp Web/Desktop. Como o
- *      texto de instrução ficava embutido na própria mensagem de botão, a
- *      cliente não via nem sequer o convite pra digitar uma alternativa.
+ *      function` ao enviar (github.com/EvolutionAPI/evolution-api/issues/2390).
+ *   2ª geração — botões (`sendButtons`), paginados em 2 telas (limite de 3
+ *      opções por mensagem): a chamada retorna sucesso e chega a ser aceita
+ *      pelo servidor do WhatsApp ("SERVER_ACK"), mas a mensagem às vezes
+ *      nunca é entregue ao destinatário — nem no celular.
  *
- * Por isso a navegação de categorias hoje é um MENU NUMERADO EM TEXTO PURO
- * (`staticMessage` com `waitForReply: true` — ver `StaticMessageData` em
- * `src/components/flows/nodes/types.ts` — permite que uma mensagem de texto
- * simples pause o fluxo esperando resposta, sem depender de botões/lista).
- * Texto puro é o formato mais básico e confiável do WhatsApp.
+ * A versão atual usa TEXTO PURO com `waitForReply: true` (ver
+ * `StaticMessageData` em `src/components/flows/nodes/types.ts` — permite que
+ * uma mensagem de texto simples pause o fluxo esperando resposta, sem
+ * depender de botões/lista). Texto puro não tem limite de opções por
+ * mensagem, então as 5 opções (4 categorias + "Outros assuntos") cabem numa
+ * ÚNICA tela — não precisa mais de paginação.
  *
  * O fluxo é dividido em três camadas:
  *
- * 1) NAVEGAÇÃO DE CATEGORIAS (texto puro, 2 páginas) — `bs-pagina1`/`bs-pagina2`.
- *    Página 1: 1-Cabelo | 2-Unhas | 3-Mais opções
- *    Página 2: 1-Cílios | 2-Sobrancelhas | 3-Voltar
- *    "Mais opções" e "Voltar" ficam num loop entre as duas páginas até a
- *    cliente escolher uma categoria de verdade.
+ * 1) MENU DE CATEGORIAS (`bs-menu`, texto puro, `waitForReply: true`) — as 5
+ *    opções de uma vez: 1-Cabelo, 2-Unhas, 3-Cílios, 4-Sobrancelhas,
+ *    5-Outros assuntos. A cliente pode responder com o número OU o nome por
+ *    extenso — a cadeia de condições checa explicitamente CADA opção (nunca
+ *    "por eliminação"), e se nenhuma bater, cai em `bs-menu-retry` (reenvia
+ *    o mesmo menu). Antes desta correção (num design anterior deste
+ *    template), uma resposta que não batia com nada era tratada por
+ *    eliminação binária como se fosse a última opção — esse bug não existe
+ *    mais aqui.
  *
- *    IMPORTANTE: a cliente pode responder tanto com o número quanto com o
- *    nome da categoria por extenso — a cadeia de condições checa
- *    explicitamente CADA uma das opções (nunca "por eliminação"), e se
- *    nenhuma bater, cai num node de retry (`bs-pagina1-retry`/
- *    `bs-pagina2-retry`) que reenvia o mesmo menu. Antes desta correção, uma
- *    resposta que não batia com nada era tratada por eliminação binária como
- *    se fosse a última opção da página (ex: "bom dia" virava "Unhas" por
- *    engano).
+ * 2) SUB-SERVIÇOS EM TEXTO PURO E NUMERADO (`bs-sub-*`) — assim que uma
+ *    categoria é escolhida, envia o catálogo NUMERADO daquela categoria
+ *    (sem a opção solta "Outros" — quem quiser outro assunto já escolhe
+ *    isso no menu principal) e TAMBÉM pausa esperando resposta
+ *    (`waitForReply: true`). Isso é importante: como o node já espera a
+ *    cliente responder ANTES de acionar a IA, o primeiro turno da IA já
+ *    recebe a resposta de verdade da cliente (ex: "quero manicure e um
+ *    alongamento") em vez de só o clique no menu anterior — por isso a IA
+ *    não precisa mais mandar uma saudação genérica logo em seguida
+ *    ("Oi! Que bom ter você aqui...") duplicando mensagem.
  *
- * 2) SUB-SERVIÇOS EM TEXTO PURO (`bs-sub-*`) — assim que uma categoria é
- *    escolhida, envia o catálogo completo daquela categoria como texto
- *    simples, um sub-serviço por linha (sem botões — a API de botões do
- *    WhatsApp não comporta listas longas). Segue automaticamente para a IA.
- *
- * 3) NÓ DE IA (`bs-ia-coleta`) — assume a conversa em texto corrido logo
- *    depois do catálogo ser exibido. O `customPrompt` (constante
+ * 3) NÓ DE IA (`bs-ia-coleta`) — assume a conversa em texto corrido já com a
+ *    resposta real da cliente em mãos (ou, se ela escolheu "Outros
+ *    assuntos", sem nenhum catálogo prévio — nesse caso específico a IA
+ *    ainda precisa cumprimentar e perguntar como ajudar, é o único cenário
+ *    em que isso faz sentido). O `customPrompt` (constante
  *    `AI_COLLECTION_PROMPT`) mantém o catálogo completo das 4 categorias
- *    (para validar o que a cliente digitar, mesmo se ela mencionar mais de
- *    uma categoria) e as regras de interação (múltiplos serviços, coleta de
- *    fotos, confirmação obrigatória antes do alerta final).
+ *    (para validar o que a cliente digitar) e as regras de interação
+ *    (múltiplos serviços, coleta de fotos, confirmação obrigatória antes do
+ *    alerta final).
  *
  * TRIGGER (primeira mensagem)
- *   -> Página 1 (Cabelo | Unhas | Mais opções)
- *        -> [Mais opções] Página 2 (Cílios | Sobrancelhas | Voltar)
- *             -> [Voltar] Página 1 (loop)
- *             -> [Cílios/Sobrancelhas] Sub-serviços (texto) -> IA
- *        -> [Cabelo/Unhas] Sub-serviços (texto) -> IA
+ *   -> Menu (1-Cabelo | 2-Unhas | 3-Cílios | 4-Sobrancelhas | 5-Outros assuntos)
+ *        -> [Outros assuntos] IA (sem catálogo prévio — cumprimenta e pergunta)
+ *        -> [Cabelo/Unhas/Cílios/Sobrancelhas] Sub-serviços (texto numerado,
+ *           pausa esperando resposta) -> IA (já com a resposta real da cliente)
  *   -> IA (Agente de coleta, texto corrido) -> Notificação de lead qualificado
  *
  * O roteamento usa blocos de Condição (`condition`) avaliando a variável
- * `ultima_resposta` (texto do botão clicado mais recentemente pelo contato).
+ * `ultima_resposta` (texto da resposta mais recente do contato).
  */
 
 import type { Node, Edge } from "@xyflow/react";
@@ -98,7 +96,12 @@ const LEAD_NOTIFICATION_MESSAGE = `🔥 *NOVO LEAD QUALIFICADO* 🔥
 📸 *Foto Referência:* {{foto_referencia_url}}
 🎯 *Resumo do Atendimento:* {{resumo_ia}}`;
 
-/** Catálogo de sub-serviços por categoria — usado tanto nas mensagens de texto puro quanto no prompt da IA. */
+/**
+ * Catálogo de sub-serviços por categoria — usado tanto nas mensagens de
+ * texto numerado quanto no prompt da IA. Sem a opção solta "Outros": quem
+ * tem um pedido fora do catálogo já escolhe "Outros assuntos" no menu
+ * principal, que vai direto para a IA sem passar por um catálogo específico.
+ */
 const SUB_SERVICES: Record<"cabelo" | "unhas" | "cilios" | "sobrancelhas", string[]> = {
   cabelo: [
     "Avaliação para Mechas",
@@ -124,7 +127,6 @@ const SUB_SERVICES: Record<"cabelo" | "unhas" | "cilios" | "sobrancelhas", strin
     "Tonalização",
     "Maquiagem",
     "Penteado",
-    "Outros",
   ],
   unhas: [
     "Manicure",
@@ -142,41 +144,39 @@ const SUB_SERVICES: Record<"cabelo" | "unhas" | "cilios" | "sobrancelhas", strin
     "Esmaltação Tradicional",
     "Colocação de Unhas Postiças",
     "Spa dos Pés",
-    "Outros",
   ],
   cilios: [
     "Extensão de Cílios – Técnica Fox Eyes",
     "Extensão de Cílios – Demais técnicas",
     "Manutenção – Técnica Fox Eyes",
     "Manutenção – Demais técnicas",
-    "Outros",
   ],
-  sobrancelhas: [
-    "Brow Lamination",
-    "Dermaplaning",
-    "Design com Henna",
-    "Epilação de Buço",
-    "Hydra Gloss",
-    "Lash Lifting",
-    "Natural Design",
-    "Outros",
-  ],
+  sobrancelhas: ["Brow Lamination", "Dermaplaning", "Design com Henna", "Epilação de Buço", "Hydra Gloss", "Lash Lifting", "Natural Design"],
 };
 
-/** Monta a mensagem de texto puro (um sub-serviço por linha) enviada logo após a escolha da categoria. */
+/**
+ * Monta a mensagem de texto puro e NUMERADO (1., 2., 3...) enviada logo após
+ * a escolha da categoria — já inclui a pergunta final ("Quais sub-serviços
+ * você gostaria de agendar?") dentro da própria mensagem, para a IA não
+ * precisar mandar essa pergunta de novo como uma segunda mensagem separada.
+ */
 function subServiceMessage(categoryLabel: string, category: keyof typeof SUB_SERVICES): string {
-  return `Ótimo! Esses são os serviços de ${categoryLabel} que trabalhamos:\n\n${SUB_SERVICES[category].join("\n")}`;
+  const numbered = SUB_SERVICES[category].map((item, index) => `${index + 1}. ${item}`).join("\n");
+  return `Ótimo! Esses são os serviços de ${categoryLabel} que trabalhamos:\n\n${numbered}\n\nQuais sub-serviços você gostaria de agendar? Pode me dizer o número ou o nome — se precisar de ajuda, estou à disposição! 😊`;
 }
 
 /**
- * System prompt do "Agente de Coleta" (nó de Resposta IA). Assume a conversa
- * em texto corrido logo depois do catálogo de sub-serviços (texto puro) ser
- * exibido — por isso a instrução abaixo não pede pra IA "apresentar" a
- * lista de novo, só perguntar o que a cliente escolheu. O catálogo completo
- * das 4 categorias continua aqui para a IA validar o que for digitado,
- * mesmo que a cliente cite algo de outra categoria.
+ * System prompt do "Agente de Coleta" (nó de Resposta IA). Duas situações
+ * diferentes podem trazer a cliente até aqui (ver instrução inicial do
+ * prompt): ela já respondeu com o(s) sub-serviço(s) escolhidos (não precisa
+ * cumprimentar de novo) ou escolheu "Outros assuntos" e ainda não disse nada
+ * específico (aí sim a IA cumprimenta e pergunta). O catálogo completo das 4
+ * categorias continua aqui para a IA validar o que for digitado, mesmo que a
+ * cliente cite algo de outra categoria.
  */
-const AI_COLLECTION_PROMPT = `Você é a assistente virtual do salão de beleza/estética Home Concept. A cliente acabou de escolher uma categoria de serviço (Cabelo, Unhas, Cílios ou Sobrancelhas) e JÁ RECEBEU, em uma mensagem separada, a lista completa dos sub-serviços dessa categoria (um por linha). A partir daqui, VOCÊ assume a conversa inteiramente por texto corrido: comece com uma mensagem curta e calorosa perguntando qual(is) sub-serviço(s) da lista ela deseja (NÃO repita a lista — ela já viu), e conduza toda a coleta de informações necessárias para o agendamento.
+const AI_COLLECTION_PROMPT = `Você é a assistente virtual do salão de beleza/estética Home Concept. A cliente já recebeu uma mensagem anterior — o catálogo numerado da categoria escolhida (Cabelo, Unhas, Cílios ou Sobrancelhas), ou um convite genérico caso ela tenha escolhido "Outros assuntos" — e a mensagem mais recente dela JÁ É a resposta real, dizendo o que ela quer. NÃO cumprimente nem pergunte de novo o que ela quer — confirme rapidamente o que ela disse e siga direto para a coleta das próximas informações (regras abaixo).
+
+A partir daqui, você assume a conversa inteiramente por texto corrido e conduz toda a coleta de informações necessárias para o agendamento.
 
 =====================================================
 CATÁLOGO COMPLETO DE SUB-SERVIÇOS (use exatamente estas opções — não invente novas; serve para você validar o que a cliente disser, mesmo que ela cite outra categoria)
@@ -214,8 +214,8 @@ b) Coleta e validação inteligente de fotos:
 - Salve os links das imagens recebidas nas variáveis \`foto_atual_url\` e \`foto_referencia_url\`. Se alguma delas não for enviada, preencha o valor como "Não enviada" (nunca deixe em branco).
 - Serviços que não envolvem cabelo (Unhas, Cílios, Sobrancelhas) não exigem fotos — não peça.
 
-c) Navegação e "Voltar" durante a conversa com você:
-Se a cliente digitar "Voltar", "Menu", "Voltar ao menu" ou indicar de qualquer forma que quer trocar de categoria/assunto, oriente-a gentilmente e reapresente as 4 categorias em texto (Cabelo, Unhas, Cílios, Sobrancelhas), permitindo que ela escolha de novo por texto (nesse ponto da conversa não há mais botões — a navegação por botões só existe antes de você entrar na conversa).
+c) Navegação durante a conversa com você:
+Se a cliente digitar "Voltar", "Menu" ou indicar de qualquer forma que quer trocar de categoria/assunto, oriente-a gentilmente e reapresente as 4 categorias em texto (Cabelo, Unhas, Cílios, Sobrancelhas), permitindo que ela escolha de novo por texto (nesse ponto da conversa não há mais menu numerado — a navegação por menu só existe antes de você entrar na conversa).
 
 d) Confirmação obrigatória dos dados:
 ANTES de disparar a notificação final para o salão, você DEVE exibir esta mensagem de confirmação (preenchendo os colchetes com os dados já coletados) e aguardar a resposta da cliente:
@@ -256,13 +256,19 @@ function conditionNode(
   };
 }
 
-/** Node de mensagem estática em texto puro (sem botões/lista) — sempre segue automaticamente para o próximo node. */
-function plainTextNode(id: string, position: { x: number; y: number }, label: string, message: string): Node {
+/** Node de mensagem estática em texto puro (sem botões/lista). */
+function plainTextNode(
+  id: string,
+  position: { x: number; y: number },
+  label: string,
+  message: string,
+  waitForReply = false
+): Node {
   return {
     id,
     type: "staticMessage",
     position,
-    data: { label, message, interactiveType: "buttons", buttons: [] },
+    data: { label, message, buttons: [], waitForReply },
   };
 }
 
@@ -277,6 +283,12 @@ function edge(id: string, source: string, target: string, sourceHandle?: "yes" |
   };
 }
 
+const MENU_MESSAGE =
+  "Olá, maravilhosa! 🤩 Seja bem-vinda ao Home Concept! Responda com o número do que você procura:\n\n1️⃣ Cabelo\n2️⃣ Unhas\n3️⃣ Cílios\n4️⃣ Sobrancelhas\n5️⃣ Outros assuntos";
+
+const MENU_RETRY_MESSAGE =
+  "Desculpe, não entendi 🙏 Por favor, responda só com o número:\n1️⃣ Cabelo\n2️⃣ Unhas\n3️⃣ Cílios\n4️⃣ Sobrancelhas\n5️⃣ Outros assuntos";
+
 const NODES: Node[] = [
   // TRIGGER — dispara em qualquer primeira mensagem recebida.
   {
@@ -286,105 +298,61 @@ const NODES: Node[] = [
     data: { label: "Primeira mensagem", triggerType: "FIRST_MESSAGE" },
   },
 
-  // PÁGINA 1 de categorias — TEXTO PURO com `waitForReply: true` (menu
-  // numerado), não mensagem interativa. Testado ao vivo: botões da Evolution
-  // API/Baileys não só falham em renderizar no WhatsApp Web/Desktop, como
-  // ficam presos em "SERVER_ACK" e às vezes NUNCA chegam nem no celular —
-  // e como o texto de instrução fica embutido na própria mensagem de botão,
-  // a cliente não via nem sequer o convite pra digitar o número. Texto puro
-  // é o formato mais básico e confiável do WhatsApp, por isso virou o
-  // caminho principal (não só um fallback).
-  {
-    id: "bs-pagina1",
-    type: "staticMessage",
-    position: { x: 600, y: 160 },
-    data: {
-      label: "Categorias — Página 1",
-      message:
-        "Olá, maravilhosa! 🤩 Seja bem-vinda ao Home Concept! Responda com o número da categoria que você procura:\n\n1️⃣ Cabelo\n2️⃣ Unhas\n3️⃣ Mais opções",
-      buttons: [],
-      waitForReply: true,
-    },
-  },
+  // MENU ÚNICO — as 5 opções de uma vez (texto puro não tem limite de 3
+  // opções como botões, então não precisa mais de paginação).
+  plainTextNode("bs-menu", { x: 600, y: 160 }, "Menu de categorias", MENU_MESSAGE, true),
 
-  conditionNode("bs-cond-pag1-maisopcoes", { x: 600, y: 320 }, "Digitou 'Mais opções' ou '3'?", "Mais opções"),
-  conditionNode("bs-cond-pag1-cabelo", { x: 380, y: 460 }, "Escolheu Cabelo?", "Cabelo"),
-  conditionNode("bs-cond-pag1-unhas", { x: 200, y: 600 }, "Escolheu Unhas?", "Unhas"),
+  conditionNode("bs-cond-cabelo", { x: 600, y: 320 }, "Escolheu Cabelo?", "Cabelo"),
+  conditionNode("bs-cond-unhas", { x: 600, y: 460 }, "Escolheu Unhas?", "Unhas"),
+  conditionNode("bs-cond-cilios", { x: 600, y: 600 }, "Escolheu Cílios?", "Cílios"),
+  conditionNode("bs-cond-sobrancelhas", { x: 600, y: 740 }, "Escolheu Sobrancelhas?", "Sobrancelhas"),
+  conditionNode("bs-cond-outros", { x: 600, y: 880 }, "Escolheu Outros assuntos?", "Outros"),
 
-  // Fallback por número — cobre tanto quem digita "Cabelo"/"Unhas" por
-  // extenso (checado acima) quanto quem só manda o número da opção.
-  conditionNode("bs-cond-pag1-digito1", { x: 20, y: 680 }, "Digitou '1' (Cabelo)?", "1", "EQUALS"),
-  conditionNode("bs-cond-pag1-digito2", { x: -160, y: 720 }, "Digitou '2' (Unhas)?", "2", "EQUALS"),
-  conditionNode("bs-cond-pag1-digito3", { x: -340, y: 760 }, "Digitou '3' (Mais opções)?", "3", "EQUALS"),
+  // Fallback por número — cobre quem responde só com o dígito em vez do nome.
+  conditionNode("bs-cond-digito1", { x: 200, y: 320 }, "Digitou '1' (Cabelo)?", "1", "EQUALS"),
+  conditionNode("bs-cond-digito2", { x: 200, y: 460 }, "Digitou '2' (Unhas)?", "2", "EQUALS"),
+  conditionNode("bs-cond-digito3", { x: 200, y: 600 }, "Digitou '3' (Cílios)?", "3", "EQUALS"),
+  conditionNode("bs-cond-digito4", { x: 200, y: 740 }, "Digitou '4' (Sobrancelhas)?", "4", "EQUALS"),
+  conditionNode("bs-cond-digito5", { x: 200, y: 880 }, "Digitou '5' (Outros assuntos)?", "5", "EQUALS"),
 
-  // Retry da página 1 — cai aqui quando a resposta não bateu com NENHUMA das
-  // 3 opções (nem por nome, nem por número). Reenvia o mesmo menu, em vez de
-  // "adivinhar" a categoria por eliminação (foi exatamente esse bug que fez
-  // um "bom dia" ser tratado como se fosse "Unhas" antes desta correção).
-  {
-    id: "bs-pagina1-retry",
-    type: "staticMessage",
-    position: { x: -340, y: 900 },
-    data: {
-      label: "Categorias — Página 1 (não entendi)",
-      message: "Desculpe, não entendi 🙏 Por favor, responda só com o número:\n1️⃣ Cabelo\n2️⃣ Unhas\n3️⃣ Mais opções",
-      buttons: [],
-      waitForReply: true,
-    },
-  },
+  // Retry — cai aqui quando a resposta não bateu com NENHUMA das 5 opções
+  // (nem por nome, nem por número). Reenvia o mesmo menu, em vez de
+  // "adivinhar" a categoria por eliminação.
+  plainTextNode("bs-menu-retry", { x: 200, y: 1020 }, "Menu (não entendi)", MENU_RETRY_MESSAGE, true),
 
-  // PÁGINA 2 de categorias — mesmo formato de texto puro da página 1.
-  {
-    id: "bs-pagina2",
-    type: "staticMessage",
-    position: { x: 820, y: 460 },
-    data: {
-      label: "Categorias — Página 2",
-      message: "Mais categorias disponíveis — responda com o número:\n\n1️⃣ Cílios\n2️⃣ Sobrancelhas\n3️⃣ Voltar",
-      buttons: [],
-      waitForReply: true,
-    },
-  },
-
-  conditionNode("bs-cond-pag2-voltar", { x: 820, y: 600 }, "Clicou em 'Voltar'?", "Voltar"),
-  conditionNode("bs-cond-pag2-cilios", { x: 1040, y: 740 }, "Escolheu Cílios?", "Cílios"),
-  conditionNode("bs-cond-pag2-sobrancelhas", { x: 1220, y: 880 }, "Escolheu Sobrancelhas?", "Sobrancelhas"),
-
-  // Fallback por número da página 2 — mesmo princípio do fallback da página 1.
-  conditionNode("bs-cond-pag2-digito1", { x: 1400, y: 1000 }, "Digitou '1' (Cílios)?", "1", "EQUALS"),
-  conditionNode("bs-cond-pag2-digito2", { x: 1580, y: 1040 }, "Digitou '2' (Sobrancelhas)?", "2", "EQUALS"),
-  conditionNode("bs-cond-pag2-digito3", { x: 1760, y: 1080 }, "Digitou '3' (Voltar)?", "3", "EQUALS"),
-
-  // Retry da página 2 — mesmo princípio do retry da página 1 acima.
-  {
-    id: "bs-pagina2-retry",
-    type: "staticMessage",
-    position: { x: 1760, y: 1220 },
-    data: {
-      label: "Categorias — Página 2 (não entendi)",
-      message: "Desculpe, não entendi 🙏 Por favor, responda só com o número:\n1️⃣ Cílios\n2️⃣ Sobrancelhas\n3️⃣ Voltar",
-      buttons: [],
-      waitForReply: true,
-    },
-  },
-
-  // Sub-serviços em texto puro (um por linha) — seguem automaticamente pra IA.
-  plainTextNode("bs-sub-cabelo", { x: 100, y: 620 }, "Sub-serviços — Cabelo", subServiceMessage("Cabelo", "cabelo")),
-  plainTextNode("bs-sub-unhas", { x: 380, y: 640 }, "Sub-serviços — Unhas", subServiceMessage("Unhas", "unhas")),
-  plainTextNode("bs-sub-cilios", { x: 940, y: 900 }, "Sub-serviços — Cílios", subServiceMessage("Cílios", "cilios")),
+  // Transição para "Outros assuntos" — PAUSA esperando a resposta real da
+  // cliente antes de acionar a IA (mesmo princípio dos catálogos de
+  // sub-serviços). Sem essa pausa, a IA receberia o próprio "5"/"Outros
+  // assuntos" (o texto que selecionou esta opção no menu) como se fosse o
+  // primeiro pedido da cliente, e tentava "adivinhar" um sub-serviço a
+  // partir disso — foi exatamente esse bug encontrado em teste ao vivo.
   plainTextNode(
-    "bs-sub-sobrancelhas",
-    { x: 1180, y: 900 },
-    "Sub-serviços — Sobrancelhas",
-    subServiceMessage("Sobrancelhas", "sobrancelhas")
+    "bs-outros-transicao",
+    { x: 600, y: 1020 },
+    "Outros assuntos — transição",
+    "Sem problemas! 😊 Me conta como posso te ajudar.",
+    true
   ),
 
-  // NÓ DE IA — Agente de coleta (Resposta IA). Assume a conversa por texto
-  // corrido assim que o catálogo de sub-serviços (texto puro) é exibido.
+  // Sub-serviços em texto numerado — pausam esperando a resposta da cliente
+  // (`waitForReply: true`), para o primeiro turno da IA já receber a
+  // resposta real dela, sem precisar de uma saudação genérica duplicada.
+  plainTextNode("bs-sub-cabelo", { x: 900, y: 320 }, "Sub-serviços — Cabelo", subServiceMessage("Cabelo", "cabelo"), true),
+  plainTextNode("bs-sub-unhas", { x: 900, y: 460 }, "Sub-serviços — Unhas", subServiceMessage("Unhas", "unhas"), true),
+  plainTextNode("bs-sub-cilios", { x: 900, y: 600 }, "Sub-serviços — Cílios", subServiceMessage("Cílios", "cilios"), true),
+  plainTextNode(
+    "bs-sub-sobrancelhas",
+    { x: 900, y: 740 },
+    "Sub-serviços — Sobrancelhas",
+    subServiceMessage("Sobrancelhas", "sobrancelhas"),
+    true
+  ),
+
+  // NÓ DE IA — Agente de coleta (Resposta IA).
   {
     id: "bs-ia-coleta",
     type: "aiResponse",
-    position: { x: 600, y: 1080 },
+    position: { x: 900, y: 1020 },
     data: {
       label: "Agente de coleta (IA) — catálogo completo",
       useGlobalPrompt: false,
@@ -396,7 +364,7 @@ const NODES: Node[] = [
   {
     id: "bs-lead-alert",
     type: "alertNotification",
-    position: { x: 600, y: 1240 },
+    position: { x: 900, y: 1180 },
     data: {
       label: "Notificação: novo lead qualificado",
       recipientPhone: "",
@@ -406,53 +374,42 @@ const NODES: Node[] = [
 ];
 
 const EDGES: Edge[] = [
-  edge("bs-e-trigger-pagina1", "bs-trigger", "bs-pagina1"),
-  edge("bs-e-pagina1-cond-maisopcoes", "bs-pagina1", "bs-cond-pag1-maisopcoes"),
-  // O retry da página 1 reentra na MESMA cadeia de condições da página 1 original.
-  edge("bs-e-pagina1retry-cond-maisopcoes", "bs-pagina1-retry", "bs-cond-pag1-maisopcoes"),
+  edge("bs-e-trigger-menu", "bs-trigger", "bs-menu"),
+  edge("bs-e-menu-cond-cabelo", "bs-menu", "bs-cond-cabelo"),
+  // O retry reentra na MESMA cadeia de condições do menu original.
+  edge("bs-e-menuretry-cond-cabelo", "bs-menu-retry", "bs-cond-cabelo"),
 
-  // Página 1: "Mais opções" -> página 2; senão checa Cabelo -> senão checa Unhas
-  // -> se não bateu com NENHUM dos 3 botões, reenvia as opções (retry) em vez
-  // de adivinhar a categoria.
-  edge("bs-e-cond-maisopcoes-yes", "bs-cond-pag1-maisopcoes", "bs-pagina2", "yes"),
-  edge("bs-e-cond-maisopcoes-no", "bs-cond-pag1-maisopcoes", "bs-cond-pag1-cabelo", "no"),
-  edge("bs-e-cond-cabelo-yes", "bs-cond-pag1-cabelo", "bs-sub-cabelo", "yes"),
-  edge("bs-e-cond-cabelo-no", "bs-cond-pag1-cabelo", "bs-cond-pag1-unhas", "no"),
-  edge("bs-e-cond-unhas-yes", "bs-cond-pag1-unhas", "bs-sub-unhas", "yes"),
-  // Nenhum dos 3 textos bateu — antes de desistir, checa o fallback por número.
-  edge("bs-e-cond-unhas-no", "bs-cond-pag1-unhas", "bs-cond-pag1-digito1", "no"),
-  edge("bs-e-pag1digito1-yes", "bs-cond-pag1-digito1", "bs-sub-cabelo", "yes"),
-  edge("bs-e-pag1digito1-no", "bs-cond-pag1-digito1", "bs-cond-pag1-digito2", "no"),
-  edge("bs-e-pag1digito2-yes", "bs-cond-pag1-digito2", "bs-sub-unhas", "yes"),
-  edge("bs-e-pag1digito2-no", "bs-cond-pag1-digito2", "bs-cond-pag1-digito3", "no"),
-  edge("bs-e-pag1digito3-yes", "bs-cond-pag1-digito3", "bs-pagina2", "yes"),
-  edge("bs-e-pag1digito3-no", "bs-cond-pag1-digito3", "bs-pagina1-retry", "no"),
+  // Checa cada categoria por nome, em sequência — nunca por eliminação.
+  edge("bs-e-cond-cabelo-yes", "bs-cond-cabelo", "bs-sub-cabelo", "yes"),
+  edge("bs-e-cond-cabelo-no", "bs-cond-cabelo", "bs-cond-unhas", "no"),
+  edge("bs-e-cond-unhas-yes", "bs-cond-unhas", "bs-sub-unhas", "yes"),
+  edge("bs-e-cond-unhas-no", "bs-cond-unhas", "bs-cond-cilios", "no"),
+  edge("bs-e-cond-cilios-yes", "bs-cond-cilios", "bs-sub-cilios", "yes"),
+  edge("bs-e-cond-cilios-no", "bs-cond-cilios", "bs-cond-sobrancelhas", "no"),
+  edge("bs-e-cond-sobrancelhas-yes", "bs-cond-sobrancelhas", "bs-sub-sobrancelhas", "yes"),
+  edge("bs-e-cond-sobrancelhas-no", "bs-cond-sobrancelhas", "bs-cond-outros", "no"),
+  // "Outros assuntos" -> transição (pausa) -> IA (não existe catálogo pra esse caso).
+  edge("bs-e-cond-outros-yes", "bs-cond-outros", "bs-outros-transicao", "yes"),
+  edge("bs-e-cond-outros-no", "bs-cond-outros", "bs-cond-digito1", "no"),
 
-  edge("bs-e-pagina2-cond-voltar", "bs-pagina2", "bs-cond-pag2-voltar"),
-  // O retry da página 2 reentra na MESMA cadeia de condições da página 2 original.
-  edge("bs-e-pagina2retry-cond-voltar", "bs-pagina2-retry", "bs-cond-pag2-voltar"),
+  // Nenhum nome bateu — checa o fallback por número.
+  edge("bs-e-digito1-yes", "bs-cond-digito1", "bs-sub-cabelo", "yes"),
+  edge("bs-e-digito1-no", "bs-cond-digito1", "bs-cond-digito2", "no"),
+  edge("bs-e-digito2-yes", "bs-cond-digito2", "bs-sub-unhas", "yes"),
+  edge("bs-e-digito2-no", "bs-cond-digito2", "bs-cond-digito3", "no"),
+  edge("bs-e-digito3-yes", "bs-cond-digito3", "bs-sub-cilios", "yes"),
+  edge("bs-e-digito3-no", "bs-cond-digito3", "bs-cond-digito4", "no"),
+  edge("bs-e-digito4-yes", "bs-cond-digito4", "bs-sub-sobrancelhas", "yes"),
+  edge("bs-e-digito4-no", "bs-cond-digito4", "bs-cond-digito5", "no"),
+  edge("bs-e-digito5-yes", "bs-cond-digito5", "bs-outros-transicao", "yes"),
+  edge("bs-e-digito5-no", "bs-cond-digito5", "bs-menu-retry", "no"),
 
-  // Página 2: "Voltar" -> volta pra página 1 (loop); senão checa Cílios -> senão
-  // checa Sobrancelhas -> se não bateu com nenhum, reenvia as opções (retry).
-  edge("bs-e-cond-voltar-yes", "bs-cond-pag2-voltar", "bs-pagina1", "yes"),
-  edge("bs-e-cond-voltar-no", "bs-cond-pag2-voltar", "bs-cond-pag2-cilios", "no"),
-  edge("bs-e-cond-cilios-yes", "bs-cond-pag2-cilios", "bs-sub-cilios", "yes"),
-  edge("bs-e-cond-cilios-no", "bs-cond-pag2-cilios", "bs-cond-pag2-sobrancelhas", "no"),
-  edge("bs-e-cond-sobrancelhas-yes", "bs-cond-pag2-sobrancelhas", "bs-sub-sobrancelhas", "yes"),
-  // Nenhum dos 3 textos bateu — antes de desistir, checa o fallback por número.
-  edge("bs-e-cond-sobrancelhas-no", "bs-cond-pag2-sobrancelhas", "bs-cond-pag2-digito1", "no"),
-  edge("bs-e-pag2digito1-yes", "bs-cond-pag2-digito1", "bs-sub-cilios", "yes"),
-  edge("bs-e-pag2digito1-no", "bs-cond-pag2-digito1", "bs-cond-pag2-digito2", "no"),
-  edge("bs-e-pag2digito2-yes", "bs-cond-pag2-digito2", "bs-sub-sobrancelhas", "yes"),
-  edge("bs-e-pag2digito2-no", "bs-cond-pag2-digito2", "bs-cond-pag2-digito3", "no"),
-  edge("bs-e-pag2digito3-yes", "bs-cond-pag2-digito3", "bs-pagina1", "yes"),
-  edge("bs-e-pag2digito3-no", "bs-cond-pag2-digito3", "bs-pagina2-retry", "no"),
-
-  // As 4 categorias convergem no mesmo Agente de Coleta (IA).
+  // As 4 categorias + "Outros assuntos" convergem no mesmo Agente de Coleta (IA).
   edge("bs-e-sub-cabelo-ia", "bs-sub-cabelo", "bs-ia-coleta"),
   edge("bs-e-sub-unhas-ia", "bs-sub-unhas", "bs-ia-coleta"),
   edge("bs-e-sub-cilios-ia", "bs-sub-cilios", "bs-ia-coleta"),
   edge("bs-e-sub-sobrancelhas-ia", "bs-sub-sobrancelhas", "bs-ia-coleta"),
+  edge("bs-e-outros-transicao-ia", "bs-outros-transicao", "bs-ia-coleta"),
 
   edge("bs-e-ia-coleta-alert", "bs-ia-coleta", "bs-lead-alert"),
 ];
