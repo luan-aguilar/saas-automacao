@@ -151,7 +151,7 @@ const SUB_SERVICES: Record<"cabelo" | "unhas" | "cilios" | "sobrancelhas", strin
     "Manutenção – Técnica Fox Eyes",
     "Manutenção – Demais técnicas",
   ],
-  sobrancelhas: ["Brow Lamination", "Dermaplaning", "Design com Henna", "Epilação de Buço", "Hydra Gloss", "Lash Lifting", "Natural Design"],
+  sobrancelhas: ["Brow Lamination", "Dermaplaning", "Design com Henna", "Depilação de Buço", "Hydra Gloss", "Lash Lifting", "Natural Design"],
 };
 
 const KEYCAP_DIGITS = ["0️⃣", "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];

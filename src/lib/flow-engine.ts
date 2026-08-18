@@ -191,11 +191,14 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
   const basePrompt = !data.useGlobalPrompt && data.customPrompt ? data.customPrompt : config.systemPrompt;
   const systemPrompt = `${basePrompt}\n\n${AI_JSON_CONTRACT}`;
 
-  const priorHistory = context.variables._ai_history ?? "";
-  const currentTurn = context.incomingText ?? "";
-  const userContent = priorHistory
-    ? `Histórico da conversa até agora:\n${priorHistory}\n\nNova mensagem do cliente: ${currentTurn}`
-    : `Mensagem do cliente: ${currentTurn}`;
+  // `_ai_history` é mantido pelo ORQUESTRADOR (ver `processIncomingMessage`),
+  // não aqui — ele registra toda mensagem trocada com o contato, inclusive
+  // as enviadas por nodes estáticos (ex: catálogo de sub-serviços) antes de
+  // chegar até a IA. Isso é essencial: sem isso, uma resposta curta como "7"
+  // (o número de um item do catálogo mostrado por um node estático)
+  // chegaria à IA sem contexto nenhum sobre a que catálogo ela se refere.
+  const history = context.variables._ai_history?.trim() || `Cliente: ${context.incomingText ?? ""}`;
+  const userContent = `Histórico da conversa até agora (linhas "Cliente:" são mensagens do contato, linhas "Assistente:" são mensagens já enviadas a ele — inclusive por blocos estáticos do fluxo, não só por você):\n${history}`;
 
   const client = new OpenAI({ apiKey });
 
@@ -231,10 +234,6 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
       }
     }
   }
-
-  // Histórico curto (só os últimos ~4000 caracteres) — memória de curto prazo para o próximo turno.
-  const updatedHistory = `${priorHistory}\nCliente: ${currentTurn}\nAssistente: ${parsed.reply ?? ""}`.trim();
-  context.variables._ai_history = updatedHistory.slice(-4000);
 
   const reply = parsed.reply?.trim() || "Desculpe, não consegui processar sua mensagem. Pode repetir, por favor?";
   const sendResult = await sendWhatsappMessage(context.userId, context.contactPhone, reply);
@@ -418,6 +417,16 @@ export async function processIncomingMessage(params: {
     variables.lead_nome = contactName;
   }
 
+  // `_ai_history` é a memória de curto prazo que o node de IA usa como
+  // contexto — mantida aqui, no orquestrador, para registrar TODA mensagem
+  // trocada com o contato nesta sessão, não só as que passaram pela IA.
+  // Sem isso, um node estático (ex: catálogo de sub-serviços) que manda uma
+  // lista e pausa esperando resposta faria a IA receber a próxima mensagem
+  // do contato (ex: só "7") sem nenhuma pista de a que lista aquele número
+  // se refere. Cada mensagem enviada por QUALQUER node (loop abaixo) também
+  // é somada aqui como "Assistente: ...".
+  variables._ai_history = `${variables._ai_history ?? ""}\nCliente: ${effectiveText}`.trim().slice(-4000);
+
   let currentId: string | null = session.currentNodeId;
 
   if (!currentId) {
@@ -500,6 +509,11 @@ export async function processIncomingMessage(params: {
         where: { id: chat.id },
         data: { lastMessageAt: new Date(), lastMessagePreview: result.sentText.slice(0, 120) },
       });
+      // Ver comentário acima de `_ai_history`: toda mensagem enviada entra na
+      // memória de curto prazo, não só as da IA — garante que quando a
+      // próxima resposta do contato cair no node de IA, ela tenha o contexto
+      // completo (inclusive do que um node estático acabou de mostrar).
+      variables._ai_history = `${variables._ai_history}\nAssistente: ${result.sentText}`.trim().slice(-4000);
     }
 
     if (result.next === "wait") {
