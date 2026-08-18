@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { APP_NAME } from "@/lib/constants";
@@ -68,12 +69,25 @@ export function Sidebar({ role }: { role: Role }) {
       </nav>
 
       {role === "MASTER" && (
-        <div className="border-t border-border p-3">
+        <div className="px-3 pt-3">
           <span className="block rounded-md bg-accent px-3 py-2 text-xs font-medium text-muted-foreground">
             Modo Administrador (MASTER)
           </span>
         </div>
       )}
+
+      <div className="flex items-center gap-2 border-t border-border p-3">
+        <Image
+          src="/logo-digital-analytics.png"
+          alt="Digital Analytics"
+          width={20}
+          height={20}
+          className="shrink-0 rounded-sm"
+        />
+        <span className="text-[11px] text-muted-foreground">
+          Powered by <span className="font-medium text-foreground">Digital Analytics</span>
+        </span>
+      </div>
     </aside>
   );
 }
