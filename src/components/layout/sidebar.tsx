@@ -5,7 +5,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { APP_NAME } from "@/lib/constants";
-import { LayoutDashboard, Workflow, Settings, QrCode, MessageSquareText, Users } from "lucide-react";
+import { LayoutDashboard, Workflow, Settings, QrCode, MessageSquareText, Users, UserCircle } from "lucide-react";
 import type { Role } from "@prisma/client";
 
 interface NavItem {
@@ -22,6 +22,7 @@ const navItems: NavItem[] = [
   { href: "/whatsapp", label: "Conexão WhatsApp", icon: QrCode },
   { href: "/settings", label: "Configurações", icon: Settings },
   { href: "/clients", label: "Clientes", icon: Users, masterOnly: true },
+  { href: "/profile", label: "Meu Perfil", icon: UserCircle },
 ];
 
 export function Sidebar({ role }: { role: Role }) {
