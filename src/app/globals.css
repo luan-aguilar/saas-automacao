@@ -4,7 +4,12 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
+    /* Identidade visual RoboZap / Digital Analytics — azul profundo (pin da
+       logo) como cor principal, dourado como toque de destaque pontual, e o
+       verde reservado só para estados de sucesso/"Conectado" (antes ele
+       coincidia com a cor principal, sem motivo). Tudo via CSS puro — sem
+       nenhum custo de performance/RAM adicional. */
+    --background: 210 40% 98%;
     --foreground: 222 47% 11%;
 
     --card: 0 0% 100%;
@@ -13,7 +18,7 @@
     --muted: 210 40% 96%;
     --muted-foreground: 215 16% 47%;
 
-    --primary: 158 64% 32%; /* verde WhatsApp */
+    --primary: 221 83% 45%; /* azul da logo Digital Analytics */
     --primary-foreground: 0 0% 100%;
 
     --secondary: 210 40% 96%;
@@ -25,25 +30,28 @@
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 158 64% 32%;
+    --success: 158 64% 32%; /* verde — reservado para "Conectado"/sucesso */
     --success-foreground: 0 0% 100%;
 
-    --border: 214 32% 91%;
+    --gold: 43 96% 56%; /* dourado da logo — só para toques pontuais de marca */
+    --gold-foreground: 26 40% 15%;
 
-    --radius: 0.625rem;
+    --border: 213 27% 90%;
+
+    --radius: 0.75rem;
   }
 
   .dark {
-    --background: 222 47% 8%;
+    --background: 222 47% 7%;
     --foreground: 210 40% 98%;
 
-    --card: 222 40% 11%;
+    --card: 222 40% 10%;
     --card-foreground: 210 40% 98%;
 
-    --muted: 217 33% 17%;
+    --muted: 217 33% 16%;
     --muted-foreground: 215 20% 65%;
 
-    --primary: 158 64% 42%;
+    --primary: 217 91% 60%;
     --primary-foreground: 222 47% 8%;
 
     --secondary: 217 33% 17%;
@@ -58,7 +66,10 @@
     --success: 158 64% 42%;
     --success-foreground: 222 47% 8%;
 
-    --border: 217 33% 20%;
+    --gold: 43 96% 62%;
+    --gold-foreground: 26 40% 12%;
+
+    --border: 217 33% 19%;
   }
 }
 
