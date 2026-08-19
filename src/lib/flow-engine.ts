@@ -385,16 +385,14 @@ export async function processIncomingMessage(params: {
   // essa conversa no momento do handoff (ver `disablesAiForChat`) e, sem
   // reativar aqui, a mensagem seria descartada silenciosamente pelo gate e
   // a cliente nunca receberia resposta nenhuma. Move o card pra "Cliente
-  // Recorrente" e reativa a IA (respeitando a chave geral: se o tenant
-  // desligou o atendimento automático pra todo mundo, um recorrente não
-  // furar essa regra).
+  // Recorrente" e reativa a IA SEMPRE, mesmo com a chave geral desligada —
+  // diferente de contato novo, a chave geral não deve se aplicar aqui: quem
+  // já é cliente não deve ficar sem resposta só porque a chave (pensada pra
+  // controlar contatos desconhecidos) está desligada no momento.
   if (chat.pipelineStage === "AGENDAMENTO_CONCLUIDO") {
     chat = await prisma.chat.update({
       where: { id: chat.id },
-      data: {
-        pipelineStage: "CLIENTE_RECORRENTE",
-        ...(config?.aiGloballyEnabled !== false ? { aiEnabled: true } : {}),
-      },
+      data: { pipelineStage: "CLIENTE_RECORRENTE", aiEnabled: true },
     });
   }
 
