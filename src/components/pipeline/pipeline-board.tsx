@@ -71,6 +71,14 @@ export function PipelineBoard({ initialChats }: { initialChats: PipelineChat[] }
               e.preventDefault();
               setDragOverColumn(null);
               if (draggingId) moveChat(draggingId, column.key);
+              // Não depende só do `onDragEnd` do card pra limpar isso: como o
+              // card muda de coluna (o `chats` state muda assim que
+              // `moveChat` roda), o elemento original arrastado pode ser
+              // desmontado/realocado no DOM antes do evento nativo `dragend`
+              // disparar nele — deixando `draggingId` preso pra sempre (o
+              // card ficava com opacidade baixa/letras apagadas até recarregar
+              // a página). Limpar aqui garante que sempre é resetado.
+              setDraggingId(null);
             }}
             className={cn(
               "flex h-full w-72 shrink-0 flex-col rounded-lg border border-border bg-muted/30 transition-colors",

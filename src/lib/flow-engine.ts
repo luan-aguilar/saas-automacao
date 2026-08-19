@@ -370,13 +370,33 @@ export async function processIncomingMessage(params: {
   const effectiveText = messageText || "[mensagem sem texto reconhecível]";
 
   const config = await prisma.config.findUnique({ where: { userId }, select: { aiGloballyEnabled: true } });
-  const chat = await logInboundMessageAndGetChat(
+  let chat = await logInboundMessageAndGetChat(
     userId,
     contactPhone,
     contactName,
     effectiveText,
     config?.aiGloballyEnabled !== false
   );
+
+  // Cliente recorrente: se este contato já tinha concluído o funil antes
+  // (coluna "Agendamento Concluído" no Kanban de /pipeline) e escreveu de
+  // novo, isso é um NOVO ciclo de atendimento — precisa acontecer ANTES do
+  // gate de `aiEnabled` logo abaixo, porque a IA sempre é desligada para
+  // essa conversa no momento do handoff (ver `disablesAiForChat`) e, sem
+  // reativar aqui, a mensagem seria descartada silenciosamente pelo gate e
+  // a cliente nunca receberia resposta nenhuma. Move o card pra "Cliente
+  // Recorrente" e reativa a IA (respeitando a chave geral: se o tenant
+  // desligou o atendimento automático pra todo mundo, um recorrente não
+  // furar essa regra).
+  if (chat.pipelineStage === "AGENDAMENTO_CONCLUIDO") {
+    chat = await prisma.chat.update({
+      where: { id: chat.id },
+      data: {
+        pipelineStage: "CLIENTE_RECORRENTE",
+        ...(config?.aiGloballyEnabled !== false ? { aiEnabled: true } : {}),
+      },
+    });
+  }
 
   if (!flow) {
     console.log(
@@ -408,16 +428,6 @@ export async function processIncomingMessage(params: {
       create: { userId, contactPhone, flowId: flow.id, currentNodeId: null, variables: {}, status: "ACTIVE" },
       update: { flowId: flow.id, currentNodeId: null, variables: {}, status: "ACTIVE" },
     });
-
-    // Cliente recorrente: se este contato já concluiu o funil antes (coluna
-    // "Agendamento Concluído" no Kanban de /pipeline) e está começando um
-    // NOVO ciclo de atendimento agora, sinaliza isso no funil em vez de
-    // deixá-lo cair de volta em "Primeiro Atendimento" como se fosse a
-    // primeira vez — dá visibilidade pro operador de que é alguém que já é
-    // cliente do salão.
-    if (chat.pipelineStage === "AGENDAMENTO_CONCLUIDO") {
-      await prisma.chat.update({ where: { id: chat.id }, data: { pipelineStage: "CLIENTE_RECORRENTE" } });
-    }
   }
 
   const variables: Record<string, string> = { ...((session.variables as Record<string, string>) ?? {}) };
