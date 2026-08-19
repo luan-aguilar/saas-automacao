@@ -159,19 +159,20 @@ function extractQr(data: unknown): EvolutionQrResult {
 
 /**
  * Eventos assinados no webhook da instância — ver `setWebhook`/`createInstance`.
- * Envia tanto o formato minúsculo-com-ponto (usado por algumas versões da
- * Evolution API v2) quanto o SCREAMING_SNAKE_CASE (usado por outras) para os
- * mesmos três eventos — a Evolution API ignora os nomes que não reconhece,
- * então isso cobre as duas variações sem risco de duplicar disparos.
+ *
+ * A Evolution API valida esta lista contra um enum fixo em
+ * SCREAMING_SNAKE_CASE (`POST /webhook/set` rejeita com 400 qualquer nome
+ * fora dele, ex: as variações minúsculas-com-ponto tipo "messages.upsert"
+ * usadas numa versão anterior deste arquivo — pareciam inofensivas só
+ * porque `/instance/create` não valida tão estrito, mas o endpoint de
+ * reconfiguração do webhook rejeita a lista inteira se UM nome não bater).
+ *
+ * `CHATS_UPDATE` é o que o Baileys emite quando o contador de não lidas de
+ * uma conversa muda no WhatsApp — inclusive quando o dono marca como lida
+ * pelo próprio celular — usado pra manter `Chat.unreadCount` sincronizado
+ * (ver webhook).
  */
-const WEBHOOK_EVENTS = [
-  "messages.upsert",
-  "messages.update",
-  "connection.update",
-  "MESSAGES_UPSERT",
-  "MESSAGES_UPDATE",
-  "CONNECTION_UPDATE",
-];
+const WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE", "CHATS_UPDATE"];
 
 /**
  * Cria a instância do zero na Evolution API e retorna o QR Code gerado.

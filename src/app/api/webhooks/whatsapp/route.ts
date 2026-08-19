@@ -49,6 +49,25 @@ type EvolutionWebhookBody = {
   };
 };
 
+type EvolutionChatUpdate = { id?: string; remoteJid?: string; unreadCount?: number };
+
+/**
+ * Normaliza o payload de um evento CHATS_UPDATE numa lista de atualizações —
+ * a Evolution API varia bastante aqui entre versões (às vezes um único
+ * objeto, às vezes um array, às vezes aninhado em `data.chats`), então
+ * cobrimos os formatos mais comuns em vez de travar numa forma só.
+ */
+function extractChatUpdates(data: unknown): EvolutionChatUpdate[] {
+  if (Array.isArray(data)) return data as EvolutionChatUpdate[];
+  if (data && typeof data === "object") {
+    const obj = data as { chats?: unknown; chat?: unknown };
+    if (Array.isArray(obj.chats)) return obj.chats as EvolutionChatUpdate[];
+    if (obj.chat && typeof obj.chat === "object") return [obj.chat as EvolutionChatUpdate];
+    return [data as EvolutionChatUpdate];
+  }
+  return [];
+}
+
 /** Normaliza o estado de conexão do payload de um evento CONNECTION_UPDATE. */
 function extractConnectionState(data: EvolutionWebhookBody["data"]): EvolutionConnectionState {
   const raw = data?.state ?? data?.instance?.state;
@@ -253,6 +272,37 @@ export async function POST(request: NextRequest) {
         }
       } catch (error) {
         console.error("[webhook/whatsapp] Erro ao sincronizar CONNECTION_UPDATE:", error);
+      }
+    }
+
+    return NextResponse.json({ ok: true });
+  }
+
+  // CHATS_UPDATE — o Baileys dispara isso quando o contador de não lidas de
+  // uma conversa muda no WhatsApp, inclusive quando o dono marca como lida
+  // pelo próprio celular (não só quando chega mensagem nova). Sem tratar
+  // isso, `Chat.unreadCount` só zerava quando a conversa era aberta aqui
+  // dentro da Central de Atendimento — ler no celular não refletia no SaaS.
+  if (eventName === "CHATS_UPDATE") {
+    const instanceName = body.instance;
+    if (instanceName) {
+      try {
+        const connection = await prisma.whatsappConnection.findFirst({
+          where: { externalSessionId: instanceName },
+        });
+        if (connection) {
+          for (const update of extractChatUpdates(body.data)) {
+            const jid = update.id ?? update.remoteJid;
+            if (!jid || jid.endsWith("@g.us") || typeof update.unreadCount !== "number") continue;
+
+            await prisma.chat.updateMany({
+              where: { userId: connection.userId, contactPhone: jid.split("@")[0] },
+              data: { unreadCount: Math.max(0, update.unreadCount) },
+            });
+          }
+        }
+      } catch (error) {
+        console.error("[webhook/whatsapp] Erro ao sincronizar CHATS_UPDATE:", error);
       }
     }
 
