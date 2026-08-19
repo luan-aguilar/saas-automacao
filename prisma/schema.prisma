@@ -100,6 +100,8 @@ model User {
   templateAccess TemplateAccess[] @relation("TemplateAccessUser")
   templateGrants TemplateAccess[] @relation("TemplateAccessGrantedBy")
 
+  mediaAssets MediaAsset[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -313,6 +315,31 @@ model AuditLog {
   action  String // ex: "CLIENT_CREATED", "CLIENT_DEACTIVATED", "PASSWORD_RESET"
   target  String? // id do recurso afetado
   metadata Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Mídia recebida via WhatsApp (fotos enviadas por contatos durante um fluxo)
+// ---------------------------------------------------------------------------
+// A Evolution API entrega mídia de mensagem (imagem/áudio/etc.) como bytes já
+// decriptados via `/chat/getBase64FromMediaMessage` — não como uma URL
+// pública utilizável (a URL crua do Baileys é criptografada e expira). Como
+// o tenant ainda não tem um bucket de object storage próprio configurado,
+// guardamos os bytes aqui e servimos via `GET /api/media/[id]` (rota pública,
+// fora do middleware de sessão — o link precisa abrir direto no WhatsApp da
+// recepcionista do salão, sem exigir login). Se o volume de mídia crescer
+// muito, migrar para um bucket externo (S3/Supabase Storage) é o próximo
+// passo natural, sem precisar mudar o restante do fluxo.
+model MediaAsset {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  mimetype String
+  data     Bytes
 
   createdAt DateTime @default(now())
 

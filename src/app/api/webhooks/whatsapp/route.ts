@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { processIncomingMessage } from "@/lib/flow-engine";
 import { syncConnectionState } from "@/lib/whatsapp-service";
-import type { EvolutionConnectionState } from "@/lib/evolution-api";
+import { getBase64FromMediaMessage, type EvolutionConnectionState } from "@/lib/evolution-api";
 
 /**
  * POST /api/webhooks/whatsapp — recebido diretamente da Evolution API v2 a
@@ -31,6 +31,7 @@ type EvolutionMessageContent = {
   extendedTextMessage?: { text?: string };
   buttonsResponseMessage?: { selectedDisplayText?: string };
   listResponseMessage?: { title?: string };
+  imageMessage?: { caption?: string };
 };
 
 type EvolutionWebhookBody = {
@@ -55,7 +56,7 @@ function extractConnectionState(data: EvolutionWebhookBody["data"]): EvolutionCo
   return "unknown";
 }
 
-/** Extrai o texto "efetivo" da mensagem, cobrindo texto puro e respostas a botões/lista. */
+/** Extrai o texto "efetivo" da mensagem, cobrindo texto puro e respostas a botões/lista (não cobre mídia — ver `resolveIncomingMessageText`). */
 function extractMessageText(message: EvolutionMessageContent | undefined): string {
   if (!message) return "";
   const text =
@@ -65,6 +66,47 @@ function extractMessageText(message: EvolutionMessageContent | undefined): strin
     message.listResponseMessage?.title ??
     "";
   return text.trim();
+}
+
+/**
+ * Resolve o texto "efetivo" de uma mensagem recebida — incluindo o caso de
+ * foto: a URL crua que vem no payload (`imageMessage.url`) é criptografada
+ * pelo protocolo do WhatsApp e não pode ser aberta diretamente, então
+ * baixamos os bytes já decriptados via `getBase64FromMediaMessage`, guardamos
+ * em `MediaAsset` e devolvemos um texto com a legenda (se houver) + a URL
+ * pública da foto nesta aplicação. Isso é o que permite ao bloco de IA do
+ * fluxo "ver" a foto na conversa e salvar essa URL nas variáveis
+ * `foto_atual_url`/`foto_referencia_url` (regra "b" do prompt do template de
+ * salão) — sem esse texto, a IA não tem absolutamente nenhuma pista de que
+ * uma foto foi enviada.
+ */
+async function resolveIncomingMessageText(params: {
+  message: EvolutionMessageContent | undefined;
+  key: EvolutionMessageKey;
+  instanceName: string;
+  userId: string;
+  requestOrigin: string;
+}): Promise<string> {
+  const { message, key, instanceName, userId, requestOrigin } = params;
+
+  if (message?.imageMessage) {
+    const caption = message.imageMessage.caption?.trim() ?? "";
+    const media = await getBase64FromMediaMessage(instanceName, key);
+
+    if (!media) {
+      console.warn("[webhook/whatsapp] Falha ao baixar foto recebida — seguindo sem URL.");
+      return caption || "[O cliente enviou uma foto, mas não foi possível processá-la — peça para reenviar.]";
+    }
+
+    const asset = await prisma.mediaAsset.create({
+      data: { userId, mimetype: media.mimetype, data: Buffer.from(media.base64, "base64") },
+    });
+    const url = `${requestOrigin}/api/media/${asset.id}`;
+
+    return caption ? `${caption}\n[Foto enviada pelo cliente: ${url}]` : `[Foto enviada pelo cliente: ${url}]`;
+  }
+
+  return extractMessageText(message);
 }
 
 /** Normaliza o nome do evento para SCREAMING_SNAKE_CASE, cobrindo tanto "messages.upsert" quanto "MESSAGES_UPSERT". */
@@ -176,7 +218,13 @@ export async function POST(request: NextRequest) {
     });
 
     const contactPhone = key.remoteJid.split("@")[0];
-    const messageText = extractMessageText(body.data?.message);
+    const messageText = await resolveIncomingMessageText({
+      message: body.data?.message,
+      key,
+      instanceName,
+      userId: connection.userId,
+      requestOrigin: request.nextUrl.origin,
+    });
 
     await processIncomingMessage({
       userId: connection.userId,

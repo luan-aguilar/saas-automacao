@@ -272,6 +272,34 @@ export async function fetchInstancePhoneNumber(instanceName: string): Promise<st
   }
 }
 
+export type EvolutionMediaKey = { id?: string; fromMe?: boolean; remoteJid?: string };
+
+/**
+ * Baixa e decripta uma mídia (imagem, áudio, etc.) recebida numa mensagem,
+ * dado apenas a `key` da mensagem (a mesma `data.key` do payload do webhook
+ * `MESSAGES_UPSERT`). A URL crua que vem no próprio payload da mensagem
+ * (`imageMessage.url`) é criptografada pelo protocolo do WhatsApp e não pode
+ * ser baixada diretamente — a Evolution API faz a decriptação server-side e
+ * devolve os bytes prontos em base64 por este endpoint.
+ */
+export async function getBase64FromMediaMessage(
+  instanceName: string,
+  key: EvolutionMediaKey
+): Promise<{ base64: string; mimetype: string } | null> {
+  try {
+    const data = (await evolutionFetch(`/chat/getBase64FromMediaMessage/${instanceName}`, {
+      method: "POST",
+      body: JSON.stringify({ message: { key }, convertToMp4: false }),
+    })) as { base64?: string; mimetype?: string } | null;
+
+    if (!data?.base64 || !data?.mimetype) return null;
+    return { base64: data.base64, mimetype: data.mimetype };
+  } catch (error) {
+    console.warn("[evolution-api] Falha ao baixar mídia da mensagem:", error);
+    return null;
+  }
+}
+
 /** Envia uma mensagem de texto simples através da instância do tenant. */
 export async function sendTextMessage(instanceName: string, phone: string, text: string) {
   return evolutionFetch(`/message/sendText/${instanceName}`, {
