@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +33,31 @@ export function PipelineBoard({ initialChats }: { initialChats: PipelineChat[] }
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<PipelineStage | null>(null);
   const router = useRouter();
+
+  // Ref espelhando `draggingId` — lida dentro do `setInterval` abaixo, que só
+  // roda uma vez (deps vazio) e por isso enxergaria sempre o valor "preso" da
+  // primeira renderização se lesse o state diretamente.
+  const draggingIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    draggingIdRef.current = draggingId;
+  }, [draggingId]);
+
+  // Polling: mantém o quadro sincronizado com movimentações automáticas do
+  // motor de fluxo (handoff pra "Aguardando Humano", retorno de cliente
+  // recorrente) enquanto o operador está com a página aberta — sem isso, só
+  // aparecia ao recarregar a página. Pula a atualização durante um arrasto em
+  // andamento pra não "puxar o tapete" do card no meio do gesto.
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      if (draggingIdRef.current) return;
+      const res = await fetch("/api/chats");
+      if (res.ok) {
+        const data = await res.json();
+        setChats(data.chats);
+      }
+    }, 4000);
+    return () => clearInterval(interval);
+  }, []);
 
   async function moveChat(chatId: string, stage: PipelineStage) {
     const chat = chats.find((c) => c.id === chatId);
