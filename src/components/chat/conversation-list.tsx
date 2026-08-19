@@ -1,12 +1,13 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { cn, formatPhone } from "@/lib/utils";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Bot, PowerOff } from "lucide-react";
+import { Bot, PowerOff, MoreVertical, Eraser, Trash2 } from "lucide-react";
 
 export type ChatSummary = {
   id: string;
@@ -20,18 +21,87 @@ export type ChatSummary = {
   unreadCount: number;
 };
 
+function ConversationRowMenu({
+  onClear,
+  onDelete,
+}: {
+  onClear: () => void;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClickOutside(e: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative shrink-0">
+      <button
+        type="button"
+        title="Opções da conversa"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
+      >
+        <MoreVertical className="h-4 w-4" />
+      </button>
+      {open && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute right-0 top-7 z-10 w-44 overflow-hidden rounded-md border border-border bg-card py-1 shadow-md"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onClear();
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
+          >
+            <Eraser className="h-3.5 w-3.5" />
+            Limpar conversa
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onDelete();
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Excluir conversa
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ConversationList({
   chats,
   selectedId,
   onSelect,
   aiGloballyEnabled,
   onGlobalAiToggle,
+  onClearChat,
+  onDeleteChat,
 }: {
   chats: ChatSummary[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   aiGloballyEnabled: boolean;
   onGlobalAiToggle: (enabled: boolean) => void;
+  onClearChat: (chatId: string) => void;
+  onDeleteChat: (chatId: string) => void;
 }) {
   return (
     <div className="flex h-full w-80 shrink-0 flex-col border-r border-border bg-card">
@@ -64,11 +134,16 @@ export function ConversationList({
       </div>
       <div className="flex-1 overflow-y-auto">
         {chats.map((chat) => (
-          <button
+          <div
             key={chat.id}
+            role="button"
+            tabIndex={0}
             onClick={() => onSelect(chat.id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") onSelect(chat.id);
+            }}
             className={cn(
-              "flex w-full items-start gap-3 border-b border-border px-4 py-3 text-left transition-colors hover:bg-accent",
+              "group flex w-full items-start gap-3 border-b border-border px-4 py-3 text-left transition-colors hover:bg-accent",
               selectedId === chat.id && "bg-accent"
             )}
           >
@@ -76,9 +151,15 @@ export function ConversationList({
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
                 <p className="truncate text-sm font-medium">{chat.contactName}</p>
-                <span className="shrink-0 text-[10px] text-muted-foreground">
-                  {formatDistanceToNow(new Date(chat.lastMessageAt), { addSuffix: true, locale: ptBR })}
-                </span>
+                <div className="flex shrink-0 items-center gap-1">
+                  <span className="text-[10px] text-muted-foreground">
+                    {formatDistanceToNow(new Date(chat.lastMessageAt), { addSuffix: true, locale: ptBR })}
+                  </span>
+                  <ConversationRowMenu
+                    onClear={() => onClearChat(chat.id)}
+                    onDelete={() => onDeleteChat(chat.id)}
+                  />
+                </div>
               </div>
               <p className="truncate text-xs text-muted-foreground">
                 {chat.lastMessagePreview ?? formatPhone(chat.contactPhone)}
@@ -94,7 +175,7 @@ export function ConversationList({
                 )}
               </div>
             </div>
-          </button>
+          </div>
         ))}
         {chats.length === 0 && (
           <p className="p-4 text-center text-sm text-muted-foreground">

@@ -15,6 +15,9 @@ export function ChatView({
   const [chats, setChats] = useState(initialChats);
   const [selectedId, setSelectedId] = useState<string | null>(initialChats[0]?.id ?? null);
   const [aiGloballyEnabled, setAiGloballyEnabled] = useState(initialAiGloballyEnabled);
+  // Incrementado após limpar/apagar mensagens da conversa aberta, pra forçar
+  // o ChatPanel a recarregar na hora em vez de esperar o próximo polling.
+  const [reloadSignal, setReloadSignal] = useState(0);
 
   useEffect(() => {
     const interval = setInterval(async () => {
@@ -49,6 +52,37 @@ export function ChatView({
     });
   }
 
+  async function handleClearChat(chatId: string) {
+    if (!window.confirm("Limpar todo o histórico desta conversa? Isso apaga só aqui no SaaS — não afeta o WhatsApp do contato.")) {
+      return;
+    }
+    const res = await fetch(`/api/chats/${chatId}/messages`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clearAll: true }),
+    });
+    if (!res.ok) return;
+
+    setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, lastMessagePreview: null } : c)));
+    if (chatId === selectedId) setReloadSignal((n) => n + 1);
+  }
+
+  async function handleDeleteChat(chatId: string) {
+    if (!window.confirm("Excluir esta conversa? Isso remove o histórico daqui do SaaS — não afeta o WhatsApp do contato.")) {
+      return;
+    }
+    const res = await fetch(`/api/chats/${chatId}`, { method: "DELETE" });
+    if (!res.ok) return;
+
+    setChats((prev) => prev.filter((c) => c.id !== chatId));
+    if (chatId === selectedId) {
+      setSelectedId((prevId) => {
+        const remaining = chats.filter((c) => c.id !== chatId);
+        return remaining[0]?.id ?? null;
+      });
+    }
+  }
+
   const selectedChat = chats.find((c) => c.id === selectedId) ?? null;
 
   return (
@@ -59,9 +93,16 @@ export function ChatView({
         onSelect={setSelectedId}
         aiGloballyEnabled={aiGloballyEnabled}
         onGlobalAiToggle={handleGlobalAiToggle}
+        onClearChat={handleClearChat}
+        onDeleteChat={handleDeleteChat}
       />
       {selectedChat ? (
-        <ChatPanel chat={selectedChat} onAiToggle={handleAiToggle} onLocalAiStateSync={syncLocalAiState} />
+        <ChatPanel
+          chat={selectedChat}
+          onAiToggle={handleAiToggle}
+          onLocalAiStateSync={syncLocalAiState}
+          reloadSignal={reloadSignal}
+        />
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
           <MessageSquareText className="h-10 w-10" />
