@@ -496,6 +496,21 @@ export async function processIncomingMessage(params: {
       }
     }
 
+    // Captura determinística de variáveis (ver `StaticMessageData.setVariables`
+    // / `captureLastReplyInto`) — roda ANTES do envio, então acontece mesmo
+    // que o envio da mensagem falhe: são valores que o fluxo já sabe de
+    // antemão por ter chegado até aqui (ex: qual sub-serviço disparou um
+    // desvio condicional), não dependem de uma IA "lembrar" de registrar
+    // isso depois de várias mensagens de distância.
+    if (node.type === "staticMessage") {
+      if (node.data.setVariables) {
+        Object.assign(variables, node.data.setVariables);
+      }
+      if (node.data.captureLastReplyInto && variables.ultima_resposta) {
+        variables[node.data.captureLastReplyInto] = variables.ultima_resposta;
+      }
+    }
+
     const context: FlowContext = { userId, contactPhone, variables, incomingText: effectiveText };
     const result = await executeFlowNode(node, context);
 

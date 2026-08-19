@@ -67,6 +67,22 @@ export type StaticMessageData = {
    * automática, até um operador reativar manualmente pelo toggle.
    */
   disablesAiForChat?: boolean;
+  /**
+   * Quando definido, ao alcançar este node o motor também grava estas
+   * variáveis com valores FIXOS (ex: `{ servico_categoria: "Cabelo" }`) —
+   * útil para registrar deterministicamente informações que o fluxo já sabe
+   * de antemão (por ter chegado até aqui via uma condição específica), sem
+   * depender de um bloco de IA lembrar de "adivinhar" isso da conversa.
+   */
+  setVariables?: Record<string, string>;
+  /**
+   * Quando definido, ao alcançar este node o motor copia o valor atual de
+   * `ultima_resposta` (a última resposta do contato, tipicamente o que
+   * disparou a condição que trouxe o fluxo até aqui) para o nome de variável
+   * indicado — ex: `"servico_subtipo"` registra automaticamente qual opção
+   * exata o contato escolheu num ponto de desvio condicional.
+   */
+  captureLastReplyInto?: string;
 };
 
 export type ConditionData = {

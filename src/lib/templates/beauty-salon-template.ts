@@ -415,12 +415,23 @@ Sua ÚNICA função aqui é coletar essas 3 informações — elas podem chegar 
 1. Nome completo → salve em \`lead_nome\`.
 2. Dia e mês de aniversário (ex: "15/03" ou "15 de março") → salve em \`aniversario_cliente\`.
 3. Melhor dia (terça a sábado) para a avaliação presencial → salve em \`data_hora_agendamento\`.
+4. SEMPRE que preencher \`data_hora_agendamento\` pela primeira vez (ou seja, no MESMO turno em que a coleta fica completa e "done" vira true), preencha TAMBÉM \`resumo_ia\` nesse mesmo JSON — nunca deixe pra depois. Um resumo curto (1 frase), citando o sub-serviço (está no início do histórico da conversa, ex: "Cliente: Mechas") e se possui resíduo de química (está no histórico também). Exemplo de valor: "Cliente interessada em Mechas, possui resíduo de química, avaliação presencial." — obrigatório, não pule este campo.
+
+IMPORTANTE — a cliente pode responder de DUAS formas diferentes, e você precisa reconhecer as duas igualmente bem:
+(a) Uma informação por mensagem, ao longo de várias mensagens separadas.
+(b) TODAS as 3 de uma vez só, numa única mensagem — geralmente cada informação numa linha separada, SEM rótulo dizendo qual é qual. Exemplo real de como isso chega:
+"Sammy
+10/02
+Sexta 18h"
+Nesse caso você tem que identificar cada linha pelo FORMATO, mesmo sem rótulo: a linha que é só um nome próprio (sem números) é o \`lead_nome\`; a linha no formato de data curta (dia/mês, tipo "10/02" ou "15/03") é o \`aniversario_cliente\`; a linha com nome de dia da semana (terça, quarta, quinta, sexta, sábado — com ou sem horário junto) é o \`data_hora_agendamento\`. Extraia as 3 imediatamente dessa única mensagem — NUNCA trate uma mensagem com as 3 linhas como se fosse só o nome e ignore o resto.
 
 Regras:
 - Peça SÓ a informação que ainda estiver faltando — nunca repita uma pergunta cuja resposta você já tem, mesmo que tenha vindo numa mensagem anterior separada.
-- Assim que tiver as 3 informações — mesmo que a resposta da cliente tenha vindo com detalhes a mais do que foi pedido (ex: ela disse "quinta de manhã" quando você só precisava do dia) — marque "done": true IMEDIATAMENTE, no mesmo turno em que a 3ª informação chegar. NÃO peça confirmação, verificação, ou qualquer pergunta adicional antes de marcar "done" — isso SEMPRE atrasa o atendimento sem necessidade, o sistema já assume a continuação sozinho a partir daí.
+- Assim que tiver as 3 informações — mesmo que a resposta da cliente tenha vindo com detalhes a mais do que foi pedido (ex: ela disse "quinta de manhã" quando você só precisava do dia) — marque "done": true IMEDIATAMENTE, no mesmo turno em que a 3ª informação chegar. NÃO peça confirmação, verificação, ou qualquer pergunta adicional antes de marcar "done" — isso SEMPRE atrasa o atendimento sem necessidade, o sistema já assume a continuação sozinho a partir daí. Nesse caso, seu "reply" deve ser uma confirmação calorosa (ex: "Perfeito, [nome]! Já anotei tudo aqui. 😊") — NUNCA repita uma pergunta pedindo algo que a mensagem que você acabou de receber já respondeu, mesmo que as 3 informações tenham chegado juntas na mesma mensagem.
 - Se a cliente perguntar ou pedir algo fora desse escopo, marque "needsHuman": true e responda algo breve tipo "Só um momento, já te encaminho com nossa equipe! 😊".
-- Seja calorosa, use poucos emojis, mensagens curtas.`;
+- Seja calorosa, use poucos emojis, mensagens curtas.
+
+Não se preocupe com \`servico_categoria\` nem \`servico_subtipo\` — essas duas já são preenchidas automaticamente pelo sistema a partir do serviço que a cliente escolheu antes de chegar até você, você não precisa (nem consegue) defini-las.`;
 
 function conditionNode(
   id: string,
@@ -475,13 +486,14 @@ function plainTextNode(
   label: string,
   message: string,
   waitForReply = false,
-  disablesAiForChat = false
+  disablesAiForChat = false,
+  extra?: { setVariables?: Record<string, string>; captureLastReplyInto?: string }
 ): Node {
   return {
     id,
     type: "staticMessage",
     position,
-    data: { label, message, buttons: [], waitForReply, disablesAiForChat },
+    data: { label, message, buttons: [], waitForReply, disablesAiForChat, ...extra },
   };
 }
 
@@ -576,7 +588,22 @@ const NODES: Node[] = [
     320
   ).nodes,
 
-  plainTextNode("bs-sondagem-pergunta", { x: 1250, y: 320 }, "Sondagem — pergunta de química/foto", SONDAGEM_PERGUNTA_MESSAGE, true),
+  // `setVariables`/`captureLastReplyInto`: registra deterministicamente que
+  // o serviço é "Cabelo" e QUAL sub-serviço exato disparou a sondagem (o
+  // texto que a cliente acabou de responder no catálogo, ex: "Mechas" ou
+  // "3") — sem isso, `servico_categoria`/`servico_subtipo` ficavam em
+  // branco na notificação final: nenhum dos dois nodes de IA da sondagem
+  // tinha motivo pra "adivinhar" esses dados, já que nunca foram pedidos
+  // como pergunta nesta parte da conversa.
+  plainTextNode(
+    "bs-sondagem-pergunta",
+    { x: 1250, y: 320 },
+    "Sondagem — pergunta de química/foto",
+    SONDAGEM_PERGUNTA_MESSAGE,
+    true,
+    false,
+    { setVariables: { servico_categoria: "Cabelo" }, captureLastReplyInto: "servico_subtipo" }
+  ),
 
   // Coleta resposta sim/não + foto atual + foto referência, em qualquer ordem.
   {
