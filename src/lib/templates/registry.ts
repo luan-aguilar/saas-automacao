@@ -17,12 +17,40 @@
 import type { Node, Edge } from "@xyflow/react";
 import { createBeautySalonTemplate, BEAUTY_SALON_TEMPLATE_NAME } from "./beauty-salon-template";
 
+/**
+ * Uma coluna do Kanban de `/pipeline`. `key` usa os mesmos 4 estágios
+ * universais definidos no enum `PipelineStage` do schema (novo contato /
+ * recorrente / aguardando humano / concluído — conceitos de funil de vendas
+ * que fazem sentido pra qualquer segmento) — só o RÓTULO/descrição variam
+ * por template, não o estágio em si (o motor de fluxo já move os contatos
+ * automaticamente entre esses 4 estágios, ver `flow-engine.ts`).
+ */
+export type PipelineColumnDefinition = {
+  key: "PRIMEIRO_ATENDIMENTO" | "CLIENTE_RECORRENTE" | "AGUARDANDO_HUMANO" | "AGENDAMENTO_CONCLUIDO";
+  label: string;
+  description: string;
+};
+
 export type TemplateDefinition = {
   key: string;
   name: string;
   description: string;
   load: () => { nodes: Node[]; edges: Edge[] };
+  /**
+   * Colunas do Kanban de `/pipeline` específicas deste template — se
+   * omitido, o template não tem funil (só o fluxo de conversa). Cliente só
+   * vê a aba "Funil de Atendimento" se tiver acesso a algum template com
+   * isso definido (ver `getAvailableTemplates`/`/pipeline`).
+   */
+  pipelineColumns?: PipelineColumnDefinition[];
 };
+
+const BEAUTY_SALON_PIPELINE_COLUMNS: PipelineColumnDefinition[] = [
+  { key: "PRIMEIRO_ATENDIMENTO", label: "Primeiro Atendimento", description: "IA conduzindo o atendimento inicial" },
+  { key: "CLIENTE_RECORRENTE", label: "Cliente Recorrente", description: "Já é cliente, voltou pra um novo atendimento" },
+  { key: "AGUARDANDO_HUMANO", label: "Aguardando Humano", description: "IA encaminhou, esperando um atendente" },
+  { key: "AGENDAMENTO_CONCLUIDO", label: "Agendamento Concluído", description: "Atendimento fechado" },
+];
 
 export const TEMPLATE_REGISTRY: TemplateDefinition[] = [
   {
@@ -31,6 +59,7 @@ export const TEMPLATE_REGISTRY: TemplateDefinition[] = [
     description:
       "Menu de categorias, catálogo numerado de sub-serviços e agente de coleta com IA (nome, serviço, dia/horário, fotos quando aplicável) até a notificação de lead qualificado.",
     load: createBeautySalonTemplate,
+    pipelineColumns: BEAUTY_SALON_PIPELINE_COLUMNS,
   },
 ];
 

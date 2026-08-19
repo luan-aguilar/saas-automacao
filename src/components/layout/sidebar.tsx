@@ -13,13 +13,15 @@ interface NavItem {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   masterOnly?: boolean;
+  /** Só aparece se o tenant tiver acesso a um template com essa funcionalidade — ver `hasPipeline`. */
+  requiresPipeline?: boolean;
 }
 
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "Visão Geral", icon: LayoutDashboard },
   { href: "/flows", label: "Construtor de Fluxos", icon: Workflow },
   { href: "/chat", label: "Atendimento", icon: MessageSquareText },
-  { href: "/pipeline", label: "Funil de Atendimento", icon: Kanban },
+  { href: "/pipeline", label: "Funil de Atendimento", icon: Kanban, requiresPipeline: true },
   { href: "/whatsapp", label: "Conexão WhatsApp", icon: QrCode },
   { href: "/settings", label: "Configurações", icon: Settings },
   { href: "/clients", label: "Clientes", icon: Users, masterOnly: true },
@@ -27,7 +29,7 @@ const navItems: NavItem[] = [
   { href: "/profile", label: "Meu Perfil", icon: UserCircle },
 ];
 
-export function Sidebar({ role }: { role: Role }) {
+export function Sidebar({ role, hasPipeline }: { role: Role; hasPipeline: boolean }) {
   const pathname = usePathname();
 
   return (
@@ -40,6 +42,7 @@ export function Sidebar({ role }: { role: Role }) {
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {navItems
           .filter((item) => !item.masterOnly || role === "MASTER")
+          .filter((item) => !item.requiresPipeline || hasPipeline)
           .map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
             const Icon = item.icon;

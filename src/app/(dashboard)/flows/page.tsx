@@ -51,7 +51,10 @@ export default async function FlowsPage() {
         initialNodes={(flow.nodes as unknown as Node[]) ?? []}
         initialEdges={(flow.edges as unknown as Edge[]) ?? []}
         isActive={flow.isActive}
-        availableTemplates={availableTemplates}
+        // Só key/name/description cruzam pra um Client Component — `load` é
+        // função (não serializável via RSC) e é resolvida no próprio
+        // FlowBuilder através do registry (`getTemplateDefinition`).
+        availableTemplates={availableTemplates.map(({ key, name, description }) => ({ key, name, description }))}
       />
     </div>
   );

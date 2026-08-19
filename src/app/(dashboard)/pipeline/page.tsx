@@ -1,9 +1,33 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getAvailableTemplates } from "@/lib/templates/access";
 import { PipelineBoard } from "@/components/pipeline/pipeline-board";
+import { Kanban } from "lucide-react";
 
 export default async function PipelinePage() {
   const session = await auth();
+
+  const templates = await getAvailableTemplates(session!.user.id, session!.user.role);
+  const pipelineTemplates = templates
+    .filter((t) => t.pipelineColumns && t.pipelineColumns.length > 0)
+    .map((t) => ({ key: t.key, name: t.name, columns: t.pipelineColumns! }));
+
+  // Sem nenhum template com funil liberado — nada a mostrar. Acontece pra
+  // quem ainda não tem um template atribuído (ex: uma conta recém-criada
+  // antes do MASTER liberar algo em /templates) ou cujo template liberado
+  // ainda não tem um funil definido.
+  if (pipelineTemplates.length === 0) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-muted-foreground">
+        <Kanban className="h-10 w-10" />
+        <p className="text-sm font-medium text-foreground">Nenhum funil de atendimento disponível ainda</p>
+        <p className="max-w-sm text-sm">
+          O funil de atendimento vem junto com um template do Construtor de Fluxos. Peça para o MASTER liberar
+          um template para sua conta na aba &ldquo;Templates&rdquo;.
+        </p>
+      </div>
+    );
+  }
 
   const chats = await prisma.chat.findMany({
     where: { userId: session!.user.id },
@@ -32,6 +56,7 @@ export default async function PipelinePage() {
       <div className="min-h-0 flex-1">
         <PipelineBoard
           initialChats={chats.map((c) => ({ ...c, lastMessageAt: c.lastMessageAt.toISOString() }))}
+          templates={pipelineTemplates}
         />
       </div>
     </div>
