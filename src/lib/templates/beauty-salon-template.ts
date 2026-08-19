@@ -70,6 +70,29 @@
  *
  * O roteamento usa blocos de Condição (`condition`) avaliando a variável
  * `ultima_resposta` (texto da resposta mais recente do contato).
+ *
+ * ---------------------------------------------------------------------------
+ * SONDAGEM CAPILAR + ENCAMINHAMENTO HUMANO (pedido do Igor após a demo)
+ * ---------------------------------------------------------------------------
+ * Dois ajustes pedidos depois que o dono do salão viu o robô funcionando:
+ *
+ * 1) Sondagem: ao escolher Mechas, Hair Contour, Progressiva, Botox Capilar
+ *    ou Plástica dos Fios (detectados por nome/número — `bs-cond-sondagem-*`,
+ *    ver `SONDAGEM_TRIGGER_TESTS`), a cliente passa por uma pré-avaliação
+ *    (pergunta de química + fotos atual/referência — 2 nodes de IA dedicados,
+ *    focados e pequenos: `bs-sondagem-quimica-foto` e `bs-sondagem-dados`)
+ *    antes da coleta normal. A resposta sim/não sobre química ramifica
+ *    (`bs-cond-quimica`) para uma de duas mensagens EXATAS (texto fixo, não
+ *    gerado pela IA) fornecidas pelo salão.
+ *
+ * 2) Encaminhamento humano: depois de QUALQUER coleta concluída (sondagem ou
+ *    não, qualquer categoria — inclusive Unhas/Cílios/Sobrancelhas, que não
+ *    têm sondagem) OU sempre que a IA sinalizar que não sabe o que fazer
+ *    (`needsHuman` no contrato JSON — ver `AI_JSON_CONTRACT` em
+ *    `flow-engine.ts`), o fluxo passa por `bs-handoff-humano`: manda a frase
+ *    fixa combinada com o salão e desliga a IA para aquele contato
+ *    (`StaticMessageData.disablesAiForChat`) — a partir daí um humano assume
+ *    pela Central de Atendimento.
  */
 
 import type { Node, Edge } from "@xyflow/react";
@@ -88,9 +111,11 @@ const SALON_HOURS = "Terça a sábado, das 09h às 18h (exceto feriados)";
 const LEAD_NOTIFICATION_MESSAGE = `🔥 *NOVO LEAD QUALIFICADO* 🔥
 📅 *Data:* {{data_atual}}
 👤 *Nome:* {{lead_nome}}
+🎂 *Aniversário:* {{aniversario_cliente}}
 📱 *WhatsApp:* {{lead_phone}}
 🏢 *Serviço procurado:* {{servico_categoria}}
 👥 *Subtipo(s) do serviço:* {{servico_subtipo}}
+🧪 *Possui resíduo de química:* {{possui_quimica_residual}}
 ⏰ *Agendamento solicitado:* {{data_hora_agendamento}}
 📸 *Foto Cabelo Atual:* {{foto_atual_url}}
 📸 *Foto Referência:* {{foto_referencia_url}}
@@ -268,6 +293,10 @@ No campo "variables" do JSON de resposta (ver contrato de formato abaixo), sempr
 - \`foto_atual_url\` / \`foto_referencia_url\`: já cobertas na regra "b" acima.
 Não se preocupe com \`lead_phone\` nem \`data_atual\` — essas duas já são preenchidas automaticamente pelo sistema, você não precisa (nem consegue) defini-las.
 
+h) Encaminhamento para atendimento humano (IMPORTANTE):
+Assim que você concluir a coleta (regra "e" — cliente confirmou os dados), o sistema automaticamente encerra sua participação e encaminha a conversa para um atendente humano — você não precisa fazer nada além de marcar "done": true, o encaminhamento acontece sozinho logo em seguida.
+Além disso, se a cliente pedir ou perguntar algo que não esteja coberto por este roteiro (algo fora do catálogo, um pedido incomum, ou você genuinamente não conseguir entender o que ela quer mesmo depois de tentar esclarecer uma vez), NÃO tente adivinhar nem inventar uma resposta: marque "needsHuman": true no JSON. O sistema também encaminha para um atendente humano automaticamente nesse caso — seu "reply" pode ser só um reconhecimento breve tipo "Só um momento, já vou te encaminhar com nossa equipe! 😊".
+
 =====================================================
 RESUMO DO QUE VOCÊ PRECISA GARANTIR AO FINAL DA COLETA
 =====================================================
@@ -280,19 +309,163 @@ RESUMO DO QUE VOCÊ PRECISA GARANTIR AO FINAL DA COLETA
 
 Seja calorosa, use poucos emojis e mantenha as mensagens curtas e fáceis de responder pelo celular.`;
 
+/**
+ * =====================================================================
+ * SONDAGEM CAPILAR — pedida pelo dono do salão (Igor) depois da demo: os
+ * sub-serviços mais delicados (que envolvem química forte) precisam de uma
+ * pré-avaliação antes de seguir pro agendamento normal. Ver comentário no
+ * topo do arquivo (seção "SONDAGEM") pro desenho completo do sub-fluxo.
+ * =====================================================================
+ */
+
+/** Sub-serviços de Cabelo que disparam a sondagem capilar (pedido do Igor). */
+const SONDAGEM_SUB_SERVICES = ["Mechas", "Hair Contour", "Progressiva", "Botox Capilar", "Plástica dos Fios"];
+
+/** Formas de responder que disparam a sondagem — nome (CONTAINS) e número do catálogo de Cabelo (EQUALS), cobrindo os dois jeitos de escolher visto no catálogo numerado. */
+const SONDAGEM_TRIGGER_TESTS: { value: string; operator?: "CONTAINS" | "EQUALS" }[] = [
+  { value: "mecha" },
+  { value: "contour" },
+  { value: "progressiva" },
+  { value: "botox" },
+  { value: "plástica" },
+  { value: "plastica" },
+  { value: "fios" },
+  { value: "3", operator: "EQUALS" }, // Mechas
+  { value: "5", operator: "EQUALS" }, // Hair Contour
+  { value: "7", operator: "EQUALS" }, // Botox Capilar
+  { value: "8", operator: "EQUALS" }, // Progressiva
+  { value: "17", operator: "EQUALS" }, // Plástica dos Fios
+];
+
+const SONDAGEM_PERGUNTA_MESSAGE = `Antes de informarmos os valores e demais informações, vamos realizar uma pré-avaliação do seu cabelo para entendermos melhor o seu histórico de procedimentos capilares. ✨
+
+Para começarmos, me conte: seu cabelo possui algum tipo de química? Como coloração, descoloração, progressiva, selagem ou botox?
+
+1 - SIM
+2 - NÃO
+
+E, por gentileza, envie uma foto atual do seu cabelo?
+
+Assim, conseguimos avaliar melhor e orientar você de forma personalizada. 💛`;
+
+const SONDAGEM_PEDIR_FOTO_REFERENCIA_MESSAGE = `Obrigado pela foto! Agora, você tem uma foto referência do resultado que você deseja, de preferência alguma inspiração do feed do Igor? 🤩`;
+
+const SONDAGEM_MSG_QUIMICA_SIM = `Meu amor, como seu cabelo possui resíduos de química, o ideal é agendarmos uma avaliação presencial gratuita com o Igor. 🥰
+
+Assim, ele poderá avaliar de pertinho a saúde e o histórico do seu cabelo, entender melhor suas expectativas e indicar o procedimento mais adequado para alcançar o resultado que você deseja. Além disso, durante a avaliação, ele poderá informar o investimento certinho. ✨
+
+Para realizarmos seu cadastro e encontrarmos o melhor horário para você, por gentileza, me informe:
+
+* Nome completo
+* Dia e mês do seu aniversário 🎂
+* Melhor dia, de terça a sábado, entre 09h e 18h, para realizarmos sua avaliação.
+
+Dessa forma, já verificamos a disponibilidade e deixamos tudo certinho para você. 💕
+
+E, claro, durante a avaliação você poderá esclarecer todas as suas dúvidas diretamente com o Igor. Mas, caso queira nos perguntar algo antes, fique à vontade para falar com a gente! Estamos à disposição para ajudar. 🤩`;
+
+const SONDAGEM_MSG_QUIMICA_NAO = `Para realizarmos seu cadastro e agendarmos sua avaliação gratuita e serviço, por gentileza, me informe:
+
+* Nome completo
+* Dia e mês do seu aniversário 🎂
+* Melhor dia, de terça a sábado, entre 09h e 18h, para realizarmos sua avaliação gratuita.
+
+Assim, já verificamos a disponibilidade e encontramos o melhor horário para você. ✨
+
+E, claro, durante a avaliação você poderá esclarecer todas as suas dúvidas diretamente com o Igor. Mas, caso queira nos perguntar algo antes, fique à vontade para falar com a gente! Estamos à disposição para ajudar. 🤩`;
+
+const HANDOFF_HUMANO_MESSAGE = `Um momento, por favor! Estou direcionando o seu atendimento para nossa recepcionista. Em breve, você será atendida. ☺️`;
+
+/**
+ * Prompt do node de IA dedicado à sondagem capilar — coleta SÓ 3 coisas
+ * (resposta sim/não sobre química, foto atual, foto referência), que podem
+ * chegar em qualquer ordem e em mensagens separadas. Deliberadamente um node
+ * de IA à parte do `bs-ia-coleta` geral (em vez de sobrecarregar aquele
+ * prompt): mantém cada agente focado numa tarefa pequena e bem definida,
+ * mais fácil de acertar e de ajustar depois (o Igor já avisou que vai
+ * homologar e pedir ajustes).
+ */
+const AI_SONDAGEM_QUIMICA_FOTO_PROMPT = `Você é a assistente virtual do salão de beleza/estética Home Concept. A cliente acabou de receber esta mensagem (pré-avaliação capilar, antes de prosseguir com Mechas, Hair Contour, Progressiva, Botox Capilar ou Plástica dos Fios):
+
+"${SONDAGEM_PERGUNTA_MESSAGE}"
+
+Sua ÚNICA função aqui é coletar 3 informações — elas podem chegar em qualquer ordem e em mensagens separadas (a cliente pode responder tudo de uma vez ou aos poucos); nunca assuma que uma informação não foi dada só porque não veio junto com as outras:
+
+1. Se o cabelo tem resíduo de química (ex: "1"/"sim"/"tenho" = SIM; "2"/"não"/"não tenho" = NÃO). Salve em \`possui_quimica_residual\` como exatamente o texto "sim" ou "não" (nunca outro valor, nunca em branco).
+2. Uma foto ATUAL do cabelo da cliente — chega na conversa como um link, por exemplo "[Foto enviada pelo cliente: https://...]". Salve essa URL completa em \`foto_atual_url\`.
+3. Assim que a foto atual chegar (nunca antes disso), responda usando EXATAMENTE este texto, sem parafrasear nem mudar uma vírgula: "${SONDAGEM_PEDIR_FOTO_REFERENCIA_MESSAGE}" — e colete a resposta dela em \`foto_referencia_url\` (o link da foto, se ela enviar) ou salve o texto "Não enviada" nessa variável se ela disser que não tem foto de referência.
+
+Regras:
+- Peça SÓ a informação que ainda estiver faltando — nunca repita uma pergunta cuja resposta você já tem, mesmo que tenha vindo numa mensagem anterior separada.
+- Se a resposta sobre química e a foto atual chegarem juntas (mesma mensagem) ou em mensagens diferentes, tanto faz — assim que tiver as duas, já pode perguntar a foto de referência (regra 3 acima).
+- Assim que tiver \`possui_quimica_residual\`, \`foto_atual_url\`, E a cliente já tiver respondido sobre a foto de referência (enviou uma foto OU disse que não tem), marque "done": true — não peça confirmação extra, o sistema assume a continuação sozinho.
+- Se a cliente perguntar ou pedir algo fora desse escopo específico (preço, outro assunto, algo que você não sabe responder aqui), não tente adivinhar: marque "needsHuman": true e responda algo breve tipo "Só um momento, já te encaminho com nossa equipe! 😊".
+- Seja calorosa, use poucos emojis, mensagens curtas.`;
+
+/**
+ * Prompt do segundo node de IA da sondagem — roda DEPOIS da mensagem de
+ * ramificação (sim/não sobre química), que já pede nome/aniversário/dia
+ * dentro do próprio texto fixo. Mesma lógica de coleta tolerante a qualquer
+ * ordem/mensagens separadas que o `bs-ia-coleta` geral já usa.
+ */
+const AI_SONDAGEM_DADOS_PROMPT = `Você é a assistente virtual do salão de beleza/estética Home Concept. A cliente acabou de receber uma mensagem (pré-avaliação capilar concluída) pedindo 3 informações para o cadastro da avaliação: nome completo, dia e mês de aniversário, e o melhor dia (de terça a sábado, ${SALON_HOURS}) para a avaliação.
+
+Sua ÚNICA função aqui é coletar essas 3 informações — elas podem chegar em qualquer ordem e em mensagens separadas (a cliente pode mandar tudo de uma vez ou uma coisa por mensagem); nunca assuma que uma informação não foi dada só porque não veio junto com as outras:
+
+1. Nome completo → salve em \`lead_nome\`.
+2. Dia e mês de aniversário (ex: "15/03" ou "15 de março") → salve em \`aniversario_cliente\`.
+3. Melhor dia (terça a sábado) para a avaliação presencial → salve em \`data_hora_agendamento\`.
+
+Regras:
+- Peça SÓ a informação que ainda estiver faltando — nunca repita uma pergunta cuja resposta você já tem, mesmo que tenha vindo numa mensagem anterior separada.
+- Assim que tiver as 3 informações — mesmo que a resposta da cliente tenha vindo com detalhes a mais do que foi pedido (ex: ela disse "quinta de manhã" quando você só precisava do dia) — marque "done": true IMEDIATAMENTE, no mesmo turno em que a 3ª informação chegar. NÃO peça confirmação, verificação, ou qualquer pergunta adicional antes de marcar "done" — isso SEMPRE atrasa o atendimento sem necessidade, o sistema já assume a continuação sozinho a partir daí.
+- Se a cliente perguntar ou pedir algo fora desse escopo, marque "needsHuman": true e responda algo breve tipo "Só um momento, já te encaminho com nossa equipe! 😊".
+- Seja calorosa, use poucos emojis, mensagens curtas.`;
+
 function conditionNode(
   id: string,
   position: { x: number; y: number },
   label: string,
   value: string,
-  operator: "CONTAINS" | "EQUALS" = "CONTAINS"
+  operator: "CONTAINS" | "EQUALS" = "CONTAINS",
+  variable = "ultima_resposta"
 ): Node {
   return {
     id,
     type: "condition",
     position,
-    data: { label, variable: "ultima_resposta", operator, value },
+    data: { label, variable, operator, value },
   };
+}
+
+/**
+ * Monta uma cadeia de condições em OR (uma checagem por vez, em sequência —
+ * nunca "por eliminação"): se alguma bater, vai direto para `yesTarget`; se
+ * nenhuma bater, cai em `fallbackTarget`. Usado para detectar, entre várias
+ * formas possíveis de responder (nome do sub-serviço ou número do catálogo),
+ * se a cliente escolheu um dos sub-serviços que exigem a sondagem capilar
+ * (ver `SONDAGEM_TRIGGER_TESTS` abaixo) — mesma variável (`ultima_resposta`)
+ * e mesmo princípio da cadeia de categorias do menu principal.
+ */
+function orConditionChain(
+  idPrefix: string,
+  label: string,
+  tests: { value: string; operator?: "CONTAINS" | "EQUALS" }[],
+  yesTarget: string,
+  fallbackTarget: string,
+  yStart: number
+): { nodes: Node[]; edges: Edge[]; firstId: string } {
+  const nodes = tests.map((t, i) =>
+    conditionNode(`${idPrefix}${i + 1}`, { x: 200, y: yStart + i * 90 }, `${label} ("${t.value}")?`, t.value, t.operator ?? "CONTAINS")
+  );
+  const edges: Edge[] = [];
+  tests.forEach((_, i) => {
+    const id = `${idPrefix}${i + 1}`;
+    const nextId = i + 1 < tests.length ? `${idPrefix}${i + 2}` : fallbackTarget;
+    edges.push(edge(`${id}-yes`, id, yesTarget, "yes"));
+    edges.push(edge(`${id}-no`, id, nextId, "no"));
+  });
+  return { nodes, edges, firstId: `${idPrefix}1` };
 }
 
 /** Node de mensagem estática em texto puro (sem botões/lista). */
@@ -301,13 +474,14 @@ function plainTextNode(
   position: { x: number; y: number },
   label: string,
   message: string,
-  waitForReply = false
+  waitForReply = false,
+  disablesAiForChat = false
 ): Node {
   return {
     id,
     type: "staticMessage",
     position,
-    data: { label, message, buttons: [], waitForReply },
+    data: { label, message, buttons: [], waitForReply, disablesAiForChat },
   };
 }
 
@@ -387,6 +561,59 @@ const NODES: Node[] = [
     true
   ),
 
+  // ===== SONDAGEM CAPILAR (pedido do Igor após a demo) =====
+  // Detecta, entre os 23 sub-serviços de Cabelo, os 5 que exigem
+  // pré-avaliação (Mechas, Hair Contour, Progressiva, Botox Capilar,
+  // Plástica dos Fios) — se nenhum bater, cai no Agente de Coleta geral
+  // (`bs-ia-coleta`) como sempre, sem nenhuma mudança de comportamento pros
+  // outros 18 sub-serviços de Cabelo.
+  ...orConditionChain(
+    "bs-cond-sondagem-",
+    "Serviço exige sondagem?",
+    SONDAGEM_TRIGGER_TESTS,
+    "bs-sondagem-pergunta",
+    "bs-ia-coleta",
+    320
+  ).nodes,
+
+  plainTextNode("bs-sondagem-pergunta", { x: 1250, y: 320 }, "Sondagem — pergunta de química/foto", SONDAGEM_PERGUNTA_MESSAGE, true),
+
+  // Coleta resposta sim/não + foto atual + foto referência, em qualquer ordem.
+  {
+    id: "bs-sondagem-quimica-foto",
+    type: "aiResponse",
+    position: { x: 1250, y: 460 },
+    data: {
+      label: "Sondagem (IA) — química e fotos",
+      useGlobalPrompt: false,
+      customPrompt: AI_SONDAGEM_QUIMICA_FOTO_PROMPT,
+      exitKeywords: ["menu", "voltar ao menu", "voltar pro menu", "voltar para o menu", "voltar"],
+      exitTargetNodeId: "bs-menu",
+    },
+  },
+
+  // Ramifica pela resposta de química — cada lado já tem o texto EXATO
+  // pedido pelo Igor (não delegado à IA, pra garantir a fraseologia certa).
+  conditionNode("bs-cond-quimica", { x: 1250, y: 600 }, "Possui resíduo de química?", "sim", "EQUALS", "possui_quimica_residual"),
+  plainTextNode("bs-sondagem-quimica-sim", { x: 1100, y: 740 }, "Sondagem — química SIM", SONDAGEM_MSG_QUIMICA_SIM, true),
+  plainTextNode("bs-sondagem-quimica-nao", { x: 1400, y: 740 }, "Sondagem — química NÃO", SONDAGEM_MSG_QUIMICA_NAO, true),
+
+  // Coleta nome/aniversário/melhor dia (já pedidos nos textos acima), em
+  // qualquer ordem — mesma cliente pode responder tudo junto ou aos poucos.
+  {
+    id: "bs-sondagem-dados",
+    type: "aiResponse",
+    position: { x: 1250, y: 880 },
+    data: {
+      label: "Sondagem (IA) — nome, aniversário e dia",
+      useGlobalPrompt: false,
+      customPrompt: AI_SONDAGEM_DADOS_PROMPT,
+      exitKeywords: ["menu", "voltar ao menu", "voltar pro menu", "voltar para o menu", "voltar"],
+      exitTargetNodeId: "bs-menu",
+    },
+  },
+  // ===== FIM SONDAGEM CAPILAR =====
+
   // NÓ DE IA — Agente de coleta (Resposta IA).
   {
     id: "bs-ia-coleta",
@@ -419,6 +646,13 @@ const NODES: Node[] = [
       exitTargetNodeId: "bs-menu",
     },
   },
+
+  // Encaminhamento para atendimento humano — pedido do Igor: depois de
+  // QUALQUER coleta concluída (sondagem ou não, qualquer categoria) OU
+  // sempre que a IA sinalizar `needsHuman`, a conversa avisa a cliente e
+  // desliga a IA para esse contato (`disablesAiForChat`), pra um humano
+  // assumir a partir da Central de Atendimento.
+  plainTextNode("bs-handoff-humano", { x: 900, y: 1100 }, "Encaminhar para atendimento humano", HANDOFF_HUMANO_MESSAGE, false, true),
 
   // NÓ DE ALERTA — Notificação do lead qualificado para o dono do salão.
   {
@@ -464,14 +698,37 @@ const EDGES: Edge[] = [
   edge("bs-e-digito5-yes", "bs-cond-digito5", "bs-outros-transicao", "yes"),
   edge("bs-e-digito5-no", "bs-cond-digito5", "bs-menu-retry", "no"),
 
-  // As 4 categorias + "Outros assuntos" convergem no mesmo Agente de Coleta (IA).
-  edge("bs-e-sub-cabelo-ia", "bs-sub-cabelo", "bs-ia-coleta"),
+  // Unhas/Cílios/Sobrancelhas/"Outros assuntos" convergem direto no Agente de
+  // Coleta (IA) geral, sem passar pela sondagem — só Cabelo passa primeiro
+  // pela cadeia de detecção da sondagem (ver abaixo).
   edge("bs-e-sub-unhas-ia", "bs-sub-unhas", "bs-ia-coleta"),
   edge("bs-e-sub-cilios-ia", "bs-sub-cilios", "bs-ia-coleta"),
   edge("bs-e-sub-sobrancelhas-ia", "bs-sub-sobrancelhas", "bs-ia-coleta"),
   edge("bs-e-outros-transicao-ia", "bs-outros-transicao", "bs-ia-coleta"),
 
-  edge("bs-e-ia-coleta-alert", "bs-ia-coleta", "bs-lead-alert"),
+  // ===== SONDAGEM CAPILAR =====
+  // Cabelo passa PRIMEIRO pela cadeia de detecção — se o sub-serviço exigir
+  // sondagem, desvia pra `bs-sondagem-pergunta`; senão, cai no Agente de
+  // Coleta geral como qualquer outra categoria (ver `fallbackTarget` da
+  // cadeia, definido como "bs-ia-coleta" na montagem dos nodes acima).
+  edge("bs-e-sub-cabelo-sondagem", "bs-sub-cabelo", "bs-cond-sondagem-1"),
+  ...orConditionChain("bs-cond-sondagem-", "Serviço exige sondagem?", SONDAGEM_TRIGGER_TESTS, "bs-sondagem-pergunta", "bs-ia-coleta", 320).edges,
+
+  edge("bs-e-sondagem-pergunta-ia", "bs-sondagem-pergunta", "bs-sondagem-quimica-foto"),
+  edge("bs-e-sondagem-quimica-foto-cond", "bs-sondagem-quimica-foto", "bs-cond-quimica"),
+  edge("bs-e-cond-quimica-sim", "bs-cond-quimica", "bs-sondagem-quimica-sim", "yes"),
+  edge("bs-e-cond-quimica-nao", "bs-cond-quimica", "bs-sondagem-quimica-nao", "no"),
+  edge("bs-e-sondagem-sim-dados", "bs-sondagem-quimica-sim", "bs-sondagem-dados"),
+  edge("bs-e-sondagem-nao-dados", "bs-sondagem-quimica-nao", "bs-sondagem-dados"),
+  edge("bs-e-sondagem-dados-handoff", "bs-sondagem-dados", "bs-handoff-humano"),
+  // ===== FIM SONDAGEM CAPILAR =====
+
+  // Encaminhamento para atendimento humano — pedido do Igor: roda depois de
+  // QUALQUER coleta concluída pelo Agente de Coleta geral (unhas, cílios,
+  // sobrancelhas, outros assuntos, ou cabelo sem sondagem), não só a
+  // sondagem (que já tem seu próprio caminho pro handoff, acima).
+  edge("bs-e-ia-coleta-handoff", "bs-ia-coleta", "bs-handoff-humano"),
+  edge("bs-e-handoff-alert", "bs-handoff-humano", "bs-lead-alert"),
 ];
 
 /**

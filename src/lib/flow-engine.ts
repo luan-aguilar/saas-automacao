@@ -157,13 +157,14 @@ async function executeConditionNode(data: ConditionData, context: FlowContext): 
  * coleta terminou (`done`), sem precisar de function calling.
  */
 const AI_JSON_CONTRACT = `Responda SEMPRE em um único objeto JSON válido, sem nenhum texto fora dele, no formato:
-{"reply": "mensagem a enviar ao cliente pelo WhatsApp", "done": false, "variables": {"chave": "valor"}}
+{"reply": "mensagem a enviar ao cliente pelo WhatsApp", "done": false, "needsHuman": false, "variables": {"chave": "valor"}}
 
 - "reply": a mensagem a enviar agora ao cliente — curta, natural, adequada para WhatsApp.
 - "done": true SOMENTE quando você já coletou todas as informações necessárias e o cliente confirmou explicitamente os dados. Caso contrário, false.
+- "needsHuman": true quando a cliente pedir ou perguntar algo que você não sabe/não deve responder sozinha (fora do que está parametrizado para você, um pedido incomum, ou você não conseguir entender o que ela quer mesmo depois de tentar esclarecer) — nesse caso o sistema encaminha automaticamente para um atendente humano logo em seguida, então "reply" pode ser só um reconhecimento breve. Caso contrário, false.
 - "variables": todos os dados já coletados nesta conversa até agora (não apenas o que mudou agora), como texto simples.`;
 
-type AiJsonResponse = { reply?: string; done?: boolean; variables?: Record<string, string> };
+type AiJsonResponse = { reply?: string; done?: boolean; needsHuman?: boolean; variables?: Record<string, string> };
 
 /**
  * Executa o bloco "Resposta IA": chama a OpenAI com o prompt configurado
@@ -239,7 +240,11 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
   const sendResult = await sendWhatsappMessage(context.userId, context.contactPhone, reply);
   if (!sendResult.ok) return { ok: false, error: sendResult.error };
 
-  return { ok: true, next: parsed.done ? "continue" : "wait", sentText: reply };
+  // `needsHuman` funciona como um "done" antecipado: avança para o próximo
+  // node (tipicamente o bloco de encaminhamento humano) mesmo sem a coleta
+  // ter sido concluída normalmente — ver `AI_JSON_CONTRACT`.
+  const finished = parsed.done === true || parsed.needsHuman === true;
+  return { ok: true, next: finished ? "continue" : "wait", sentText: reply };
 }
 
 /**
@@ -514,6 +519,15 @@ export async function processIncomingMessage(params: {
       // próxima resposta do contato cair no node de IA, ela tenha o contexto
       // completo (inclusive do que um node estático acabou de mostrar).
       variables._ai_history = `${variables._ai_history}\nAssistente: ${result.sentText}`.trim().slice(-4000);
+    }
+
+    // Bloco de "encaminhar para atendimento humano" (ver `StaticMessageData.disablesAiForChat`):
+    // desliga a IA para esta conversa assim que a mensagem de handoff é
+    // enviada — a partir daqui, novas mensagens deste contato só ficam
+    // registradas na Central de Atendimento, sem resposta automática, até um
+    // operador reativar manualmente pelo toggle.
+    if (node.type === "staticMessage" && node.data.disablesAiForChat) {
+      await prisma.chat.update({ where: { id: chat.id }, data: { aiEnabled: false } });
     }
 
     if (result.next === "wait") {

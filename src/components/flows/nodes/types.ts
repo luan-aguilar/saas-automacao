@@ -59,6 +59,14 @@ export type StaticMessageData = {
    * ou 3") sem depender desses recursos frágeis.
    */
   waitForReply?: boolean;
+  /**
+   * Quando true, ao enviar esta mensagem o motor também desliga a IA para
+   * esta conversa (`Chat.aiEnabled = false`) — usado para o bloco de
+   * "encaminhar para atendimento humano": a partir daí novas mensagens do
+   * contato só ficam registradas na Central de Atendimento, sem resposta
+   * automática, até um operador reativar manualmente pelo toggle.
+   */
+  disablesAiForChat?: boolean;
 };
 
 export type ConditionData = {
