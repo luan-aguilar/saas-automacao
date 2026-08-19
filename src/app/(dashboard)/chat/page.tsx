@@ -5,7 +5,7 @@ import { ChatView } from "@/components/chat/chat-view";
 export default async function ChatPage() {
   const session = await auth();
 
-  const [chats, config] = await Promise.all([
+  const [chats, config, connection] = await Promise.all([
     prisma.chat.findMany({
       where: { userId: session!.user.id },
       orderBy: { lastMessageAt: "desc" },
@@ -22,6 +22,7 @@ export default async function ChatPage() {
       },
     }),
     prisma.config.findUnique({ where: { userId: session!.user.id }, select: { aiGloballyEnabled: true } }),
+    prisma.whatsappConnection.findUnique({ where: { userId: session!.user.id }, select: { status: true } }),
   ]);
 
   return (
@@ -29,6 +30,7 @@ export default async function ChatPage() {
       <ChatView
         initialChats={chats.map((c) => ({ ...c, lastMessageAt: c.lastMessageAt.toISOString() }))}
         initialAiGloballyEnabled={config?.aiGloballyEnabled ?? true}
+        initialWhatsappStatus={connection?.status ?? "DISCONNECTED"}
       />
     </div>
   );
