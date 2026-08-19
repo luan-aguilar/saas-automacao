@@ -114,6 +114,79 @@ function normalizeEventName(rawEvent: string | undefined): string {
   return (rawEvent ?? "").toUpperCase().replace(/[.\s]/g, "_");
 }
 
+/**
+ * Trata um evento `fromMe: true` (mensagem enviada pelo próprio número
+ * conectado) — duas origens possíveis, indistinguíveis pelo payload da
+ * Evolution API:
+ *   1. O PRÓPRIO robô enviou via `sendWhatsappMessage` — essa mensagem já foi
+ *      registrada na hora do envio (com `Message.externalId` salvo). Este
+ *      evento é só o "eco" da Evolution API confirmando o envio — precisa
+ *      ser IGNORADO, senão duplica no histórico da Central de Atendimento.
+ *   2. Alguém mandou manualmente pelo APARELHO (celular) ou WhatsApp Web —
+ *      nunca passou pelo backend, então nunca foi registrada. Precisa ser
+ *      salva agora, pela primeira vez, pra a Central de Atendimento refletir
+ *      TUDO que realmente foi enviado ao contato, não só o que o robô mandou.
+ *
+ * Reconhece o caso 1 primeiro por `key.id` batendo com um `Message.externalId`
+ * já salvo (o jeito preciso). Como fallback — caso a extração do ID falhe em
+ * algum envio — também trata como eco qualquer mensagem OUTBOUND idêntica
+ * enviada por nós nos últimos 15s, pra nunca duplicar mesmo se o ID faltar.
+ */
+async function resolveOutboundFromMeMessage(params: {
+  userId: string;
+  key: EvolutionMessageKey;
+  message: EvolutionMessageContent | undefined;
+  contactPhone: string;
+  instanceName: string;
+  requestOrigin: string;
+}) {
+  const { userId, key, message, contactPhone, instanceName, requestOrigin } = params;
+
+  const chat = await prisma.chat.findUnique({ where: { userId_contactPhone: { userId, contactPhone } } });
+
+  if (key.id) {
+    const echoOfOwnSend = await prisma.message.findFirst({
+      where: { externalId: key.id, chat: { userId, contactPhone } },
+    });
+    if (echoOfOwnSend) return;
+  }
+
+  const text = await resolveIncomingMessageText({ message, key, instanceName, userId, requestOrigin });
+  if (!text) return;
+
+  if (chat) {
+    const recentDuplicate = await prisma.message.findFirst({
+      where: {
+        chatId: chat.id,
+        direction: "OUTBOUND",
+        content: text,
+        createdAt: { gte: new Date(Date.now() - 15_000) },
+      },
+    });
+    if (recentDuplicate) return;
+  }
+
+  const targetChat =
+    chat ??
+    (await prisma.chat.create({
+      data: { userId, contactPhone, contactName: contactPhone, lastMessagePreview: text.slice(0, 120), aiEnabled: false },
+    }));
+
+  await prisma.message.create({
+    data: { chatId: targetChat.id, direction: "OUTBOUND", sender: "HUMAN", content: text, externalId: key.id },
+  });
+
+  // Mensagem mandada manualmente pelo celular = intervenção humana — desliga
+  // a IA pra essa conversa, mesmo princípio de quando o operador manda uma
+  // mensagem manual pela própria Central de Atendimento (ver
+  // `POST /api/chats/:id/messages`): evita a IA responder por cima de quem
+  // já está atendendo pessoalmente.
+  await prisma.chat.update({
+    where: { id: targetChat.id },
+    data: { lastMessageAt: new Date(), lastMessagePreview: text.slice(0, 120), aiEnabled: false },
+  });
+}
+
 export async function POST(request: NextRequest) {
   const queryToken = request.nextUrl.searchParams.get("token");
   const apikeyHeader = request.headers.get("apikey");
@@ -196,8 +269,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // Ignora mensagens enviadas pelo próprio robô e mensagens de grupo (motor hoje só atende 1:1).
-  if (key.fromMe || key.remoteJid.endsWith("@g.us")) {
+  // Mensagens de grupo ficam de fora — o motor hoje só atende conversas 1:1.
+  if (key.remoteJid.endsWith("@g.us")) {
     return NextResponse.json({ ok: true });
   }
 
@@ -210,6 +283,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    const contactPhone = key.remoteJid.split("@")[0];
+
+    // `fromMe: true` = mensagem enviada pelo próprio número conectado — pode
+    // ser o eco de algo que o robô já mandou (ignorar) ou uma mensagem
+    // manual mandada direto do celular/WhatsApp Web (sincronizar na Central
+    // de Atendimento). Ver `resolveOutboundFromMeMessage`. Não passa pelo
+    // motor de fluxo — não é uma mensagem do contato pro robô responder.
+    if (key.fromMe) {
+      await resolveOutboundFromMeMessage({
+        userId: connection.userId,
+        key,
+        message: body.data?.message,
+        contactPhone,
+        instanceName,
+        requestOrigin: request.nextUrl.origin,
+      });
+      return NextResponse.json({ ok: true });
+    }
+
     // Pode ser `null` (tenant sem fluxo ativo no momento) — `processIncomingMessage`
     // sempre registra a mensagem em Chat/Message independentemente disso, e só
     // pula a automação do fluxo quando não houver um `Flow` ativo.
@@ -217,7 +309,6 @@ export async function POST(request: NextRequest) {
       where: { userId: connection.userId, isActive: true },
     });
 
-    const contactPhone = key.remoteJid.split("@")[0];
     const messageText = await resolveIncomingMessageText({
       message: body.data?.message,
       key,

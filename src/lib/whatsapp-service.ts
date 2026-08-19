@@ -32,6 +32,20 @@ async function resolveInstance(fromUserId: string): Promise<string> {
 }
 
 /**
+ * Extrai o ID da mensagem (`key.id`) devolvido pela Evolution API ao enviar —
+ * usado para reconhecer, quando o webhook ecoa essa mesma mensagem de volta
+ * como um evento `fromMe`, que ela já foi registrada por nós (evita
+ * duplicar no histórico da Central de Atendimento — ver
+ * `resolveOutboundFromMeMessage` no webhook). Extração best-effort: se o
+ * formato não bater, simplesmente não achamos o ID e o webhook cai no
+ * fallback por conteúdo+tempo.
+ */
+function extractSentMessageId(response: unknown): string | undefined {
+  const data = response as { key?: { id?: string } } | null;
+  return data?.key?.id;
+}
+
+/**
  * Envia uma mensagem de texto simples via WhatsApp para um número específico,
  * usando a instância da Evolution API pareada por um determinado usuário (tenant).
  *
@@ -43,11 +57,11 @@ export async function sendWhatsappMessage(
   fromUserId: string,
   toPhone: string,
   message: string
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; externalId?: string } | { ok: false; error: string }> {
   try {
     const instanceName = await resolveInstance(fromUserId);
-    await sendTextMessage(instanceName, toPhone, message);
-    return { ok: true };
+    const response = await sendTextMessage(instanceName, toPhone, message);
+    return { ok: true, externalId: extractSentMessageId(response) };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
     console.error("[whatsapp-service] Erro ao enviar mensagem:", errorMessage);

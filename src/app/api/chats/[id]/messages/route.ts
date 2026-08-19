@@ -53,12 +53,21 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({ error: "Mensagem inválida" }, { status: 400 });
   }
 
+  const sendResult = await sendWhatsappMessage(session.user.id, chat.contactPhone, parsed.data.content);
+  if (!sendResult.ok) {
+    console.error("[chats/messages] Falha ao enviar mensagem via WhatsApp:", sendResult.error);
+  }
+
+  // `externalId` (quando o envio funciona) é o que permite o webhook
+  // reconhecer o eco desta mesma mensagem (evento `fromMe`) e não duplicá-la
+  // no histórico — ver `resolveOutboundFromMeMessage` no webhook.
   const message = await prisma.message.create({
     data: {
       chatId: params.id,
       direction: "OUTBOUND",
       sender: "HUMAN",
       content: parsed.data.content,
+      externalId: sendResult.ok ? sendResult.externalId : undefined,
     },
   });
 
@@ -73,11 +82,6 @@ export async function POST(request: Request, { params }: { params: { id: string 
       aiEnabled: false,
     },
   });
-
-  const sendResult = await sendWhatsappMessage(session.user.id, chat.contactPhone, parsed.data.content);
-  if (!sendResult.ok) {
-    console.error("[chats/messages] Mensagem salva, mas falhou ao enviar via WhatsApp:", sendResult.error);
-  }
 
   return NextResponse.json({ message, aiEnabled: false });
 }

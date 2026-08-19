@@ -56,9 +56,11 @@ export function interpolateVariables(template: string, variables: Record<string,
 
 /** Resultado da execução de um node: diz ao orquestrador como continuar o passeio pelo grafo. */
 export type StepResult =
-  // segue pela única aresta de saída do node; `sentText`, se houver, é registrado como mensagem OUTBOUND no histórico do Chat
-  | { ok: true; next: "continue"; sentText?: string }
-  | { ok: true; next: "wait"; sentText?: string } // pausa aqui — espera a próxima mensagem do contato
+  // segue pela única aresta de saída do node; `sentText`, se houver, é registrado como mensagem OUTBOUND no histórico do Chat.
+  // `externalId` (ID da mensagem devolvido pela Evolution API) é salvo junto, pra o webhook reconhecer
+  // o eco dessa mesma mensagem (evento `fromMe`) e não duplicá-la no histórico — ver `resolveOutboundFromMeMessage`.
+  | { ok: true; next: "continue"; sentText?: string; externalId?: string }
+  | { ok: true; next: "wait"; sentText?: string; externalId?: string } // pausa aqui — espera a próxima mensagem do contato
   | { ok: true; next: "branch"; handle: "yes" | "no" } // node de condição — escolhe a aresta correspondente
   | { ok: false; error: string };
 
@@ -120,7 +122,7 @@ async function executeStaticMessageNode(data: StaticMessageData, context: FlowCo
   // interativas não são confiáveis — ver comentário no tipo `StaticMessageData`).
   const result = await sendWhatsappMessage(context.userId, context.contactPhone, text);
   if (!result.ok) return { ok: false, error: result.error };
-  return { ok: true, next: data.waitForReply ? "wait" : "continue", sentText: text };
+  return { ok: true, next: data.waitForReply ? "wait" : "continue", sentText: text, externalId: result.externalId };
 }
 
 /**
@@ -244,7 +246,7 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
   // node (tipicamente o bloco de encaminhamento humano) mesmo sem a coleta
   // ter sido concluída normalmente — ver `AI_JSON_CONTRACT`.
   const finished = parsed.done === true || parsed.needsHuman === true;
-  return { ok: true, next: finished ? "continue" : "wait", sentText: reply };
+  return { ok: true, next: finished ? "continue" : "wait", sentText: reply, externalId: sendResult.externalId };
 }
 
 /**
@@ -533,7 +535,13 @@ export async function processIncomingMessage(params: {
 
     if (result.next !== "branch" && result.sentText) {
       await prisma.message.create({
-        data: { chatId: chat.id, direction: "OUTBOUND", sender: "AI", content: result.sentText },
+        data: {
+          chatId: chat.id,
+          direction: "OUTBOUND",
+          sender: "AI",
+          content: result.sentText,
+          externalId: result.externalId,
+        },
       });
       await prisma.chat.update({
         where: { id: chat.id },
