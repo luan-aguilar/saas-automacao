@@ -406,6 +406,16 @@ export async function processIncomingMessage(params: {
       create: { userId, contactPhone, flowId: flow.id, currentNodeId: null, variables: {}, status: "ACTIVE" },
       update: { flowId: flow.id, currentNodeId: null, variables: {}, status: "ACTIVE" },
     });
+
+    // Cliente recorrente: se este contato já concluiu o funil antes (coluna
+    // "Agendamento Concluído" no Kanban de /pipeline) e está começando um
+    // NOVO ciclo de atendimento agora, sinaliza isso no funil em vez de
+    // deixá-lo cair de volta em "Primeiro Atendimento" como se fosse a
+    // primeira vez — dá visibilidade pro operador de que é alguém que já é
+    // cliente do salão.
+    if (chat.pipelineStage === "AGENDAMENTO_CONCLUIDO") {
+      await prisma.chat.update({ where: { id: chat.id }, data: { pipelineStage: "CLIENTE_RECORRENTE" } });
+    }
   }
 
   const variables: Record<string, string> = { ...((session.variables as Record<string, string>) ?? {}) };
@@ -540,9 +550,14 @@ export async function processIncomingMessage(params: {
     // desliga a IA para esta conversa assim que a mensagem de handoff é
     // enviada — a partir daqui, novas mensagens deste contato só ficam
     // registradas na Central de Atendimento, sem resposta automática, até um
-    // operador reativar manualmente pelo toggle.
+    // operador reativar manualmente pelo toggle. Também move o card do
+    // contato para a coluna "Aguardando Humano" no Kanban de /pipeline —
+    // ver `PipelineStage`.
     if (node.type === "staticMessage" && node.data.disablesAiForChat) {
-      await prisma.chat.update({ where: { id: chat.id }, data: { aiEnabled: false } });
+      await prisma.chat.update({
+        where: { id: chat.id },
+        data: { aiEnabled: false, pipelineStage: "AGUARDANDO_HUMANO" },
+      });
     }
 
     if (result.next === "wait") {

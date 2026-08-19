@@ -19,6 +19,7 @@ export async function GET() {
       contactAvatarUrl: true,
       status: true,
       aiEnabled: true,
+      pipelineStage: true,
       lastMessageAt: true,
       lastMessagePreview: true,
       unreadCount: true,

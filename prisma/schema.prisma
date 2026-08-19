@@ -42,6 +42,17 @@ enum ChatStatus {
   ARCHIVED
 }
 
+// Funil/pipeline de atendimento (quadro Kanban em /pipeline) — em qual etapa
+// do processo comercial está o contato. Independente de `ChatStatus` (que é
+// sobre a conversa em si estar aberta/fechada); este é sobre onde o LEAD está
+// no funil de vendas.
+enum PipelineStage {
+  PRIMEIRO_ATENDIMENTO // conversa nova, IA conduzindo o atendimento inicial
+  CLIENTE_RECORRENTE // já concluiu o funil antes (AGENDAMENTO_CONCLUIDO) e voltou pra um novo atendimento
+  AGUARDANDO_HUMANO // IA coletou os dados e encaminhou para um atendente humano finalizar
+  AGENDAMENTO_CONCLUIDO // movido manualmente por um operador quando o agendamento/venda é fechado
+}
+
 enum MessageDirection {
   INBOUND
   OUTBOUND
@@ -269,6 +280,12 @@ model Chat {
   // Toggle por conversa: quando false, a IA para de responder e um humano assume
   aiEnabled Boolean @default(true)
 
+  // Etapa no funil/Kanban de atendimento (ver /pipeline). Movida
+  // automaticamente pelo motor de fluxo em dois pontos (handoff humano e
+  // detecção de cliente recorrente — ver `flow-engine.ts`) e manualmente
+  // pelo operador arrastando o card entre colunas.
+  pipelineStage PipelineStage @default(PRIMEIRO_ATENDIMENTO)
+
   lastMessageAt DateTime  @default(now())
   lastMessagePreview String?
   unreadCount   Int       @default(0)
@@ -283,6 +300,7 @@ model Chat {
   @@unique([userId, contactPhone])
   @@index([userId, status])
   @@index([userId, lastMessageAt])
+  @@index([userId, pipelineStage])
 }
 
 model Message {

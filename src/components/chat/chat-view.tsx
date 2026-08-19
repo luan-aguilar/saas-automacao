@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ConversationList, type ChatSummary } from "./conversation-list";
 import { ChatPanel } from "./chat-panel";
 import { MessageSquareText } from "lucide-react";
@@ -12,8 +13,20 @@ export function ChatView({
   initialChats: ChatSummary[];
   initialAiGloballyEnabled: boolean;
 }) {
+  const searchParams = useSearchParams();
+  // Deep-link vindo do Kanban (/pipeline) — clicar num card navega pra
+  // /chat?id=... e essa conversa já abre selecionada.
+  const linkedChatId = searchParams.get("id");
+
   const [chats, setChats] = useState(initialChats);
-  const [selectedId, setSelectedId] = useState<string | null>(initialChats[0]?.id ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    linkedChatId ?? initialChats[0]?.id ?? null
+  );
+
+  useEffect(() => {
+    if (linkedChatId) setSelectedId(linkedChatId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedChatId]);
   const [aiGloballyEnabled, setAiGloballyEnabled] = useState(initialAiGloballyEnabled);
   // Incrementado após limpar/apagar mensagens da conversa aberta, pra forçar
   // o ChatPanel a recarregar na hora em vez de esperar o próximo polling.
