@@ -363,3 +363,26 @@ model MediaAsset {
 
   @@index([userId])
 }
+
+// ---------------------------------------------------------------------------
+// Lock de processamento por contato
+// ---------------------------------------------------------------------------
+// Evita condição de corrida quando o mesmo contato manda mensagens em
+// rajada (cada mensagem recebida dispara uma invocação própria do webhook,
+// potencialmente em paralelo): sem isso, duas chamadas concorrentes podem
+// ler o mesmo estado "velho" da FlowSession, cada uma processar sem saber da
+// outra, e a que terminar por último sobrescreve o resultado da primeira —
+// causando respostas duplicadas/contraditórias da IA. Não tem relação com
+// nenhum outro model (`userId`/`contactPhone` bastam pra identificar o
+// contato), então não é uma FK — é só uma tabela de "reserva" temporária.
+model ContactProcessingLock {
+  id           String   @id @default(cuid())
+  userId       String
+  contactPhone String
+  // Expira sozinho — se uma chamada travar/crashar antes de liberar o lock
+  // no `finally`, o próximo contato a escrever não fica bloqueado pra
+  // sempre esperando um lock que nunca vai ser liberado manualmente.
+  lockedUntil  DateTime
+
+  @@unique([userId, contactPhone])
+}

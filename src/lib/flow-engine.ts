@@ -19,6 +19,7 @@
  */
 
 import OpenAI from "openai";
+import { randomUUID } from "crypto";
 import type { FlowSessionStatus } from "@prisma/client";
 import type {
   FlowNode,
@@ -335,6 +336,44 @@ async function logInboundMessageAndGetChat(
   return chat;
 }
 
+const LOCK_LEASE_MS = 25_000; // por quanto tempo um lock é considerado "vivo" antes de expirar sozinho
+const LOCK_RETRY_DELAY_MS = 1500;
+const LOCK_MAX_ATTEMPTS = 8; // ~12s de espera total no pior caso
+
+/**
+ * Tenta reservar o processamento deste contato de forma atômica — via
+ * `INSERT ... ON CONFLICT ... DO UPDATE ... WHERE`, uma única instrução SQL
+ * que só "ganha" o lock se ele não existir ainda OU já tiver expirado. Ver
+ * comentário do model `ContactProcessingLock` no schema para o porquê.
+ */
+async function acquireContactLock(userId: string, contactPhone: string): Promise<boolean> {
+  const now = new Date();
+  const lockedUntil = new Date(now.getTime() + LOCK_LEASE_MS);
+
+  const affectedRows = await prisma.$executeRaw`
+    INSERT INTO "ContactProcessingLock" ("id", "userId", "contactPhone", "lockedUntil")
+    VALUES (${randomUUID()}, ${userId}, ${contactPhone}, ${lockedUntil})
+    ON CONFLICT ("userId", "contactPhone")
+    DO UPDATE SET "lockedUntil" = ${lockedUntil}
+    WHERE "ContactProcessingLock"."lockedUntil" < ${now}
+  `;
+
+  return affectedRows > 0;
+}
+
+/** Tenta adquirir o lock, esperando com retentativas curtas se outra mensagem do mesmo contato já estiver sendo processada. */
+async function acquireContactLockWithRetry(userId: string, contactPhone: string): Promise<boolean> {
+  for (let attempt = 0; attempt < LOCK_MAX_ATTEMPTS; attempt++) {
+    if (await acquireContactLock(userId, contactPhone)) return true;
+    await new Promise((resolve) => setTimeout(resolve, LOCK_RETRY_DELAY_MS));
+  }
+  return false;
+}
+
+async function releaseContactLock(userId: string, contactPhone: string): Promise<void> {
+  await prisma.contactProcessingLock.deleteMany({ where: { userId, contactPhone } });
+}
+
 /**
  * Ponto de entrada do motor: recebe uma mensagem recebida de um contato,
  * localiza (ou cria) a `FlowSession` correspondente e anda pelo grafo do
@@ -378,24 +417,6 @@ export async function processIncomingMessage(params: {
     config?.aiGloballyEnabled !== false
   );
 
-  // Cliente recorrente: se este contato já tinha concluído o funil antes
-  // (coluna "Agendamento Concluído" no Kanban de /pipeline) e escreveu de
-  // novo, isso é um NOVO ciclo de atendimento — precisa acontecer ANTES do
-  // gate de `aiEnabled` logo abaixo, porque a IA sempre é desligada para
-  // essa conversa no momento do handoff (ver `disablesAiForChat`) e, sem
-  // reativar aqui, a mensagem seria descartada silenciosamente pelo gate e
-  // a cliente nunca receberia resposta nenhuma. Move o card pra "Cliente
-  // Recorrente" e reativa a IA SEMPRE, mesmo com a chave geral desligada —
-  // diferente de contato novo, a chave geral não deve se aplicar aqui: quem
-  // já é cliente não deve ficar sem resposta só porque a chave (pensada pra
-  // controlar contatos desconhecidos) está desligada no momento.
-  if (chat.pipelineStage === "AGENDAMENTO_CONCLUIDO") {
-    chat = await prisma.chat.update({
-      where: { id: chat.id },
-      data: { pipelineStage: "CLIENTE_RECORRENTE", aiEnabled: true },
-    });
-  }
-
   if (!flow) {
     console.log(
       "[flow-engine] Tenant sem fluxo ativo — mensagem registrada na Central de Atendimento, sem automação:",
@@ -404,13 +425,73 @@ export async function processIncomingMessage(params: {
     return;
   }
 
-  if (!chat.aiEnabled) {
-    console.log(
-      "[flow-engine] IA pausada para este contato (intervenção manual) — mensagem registrada, sem resposta automática:",
+  // A partir daqui mexemos em estado compartilhado ENTRE MENSAGENS do mesmo
+  // contato (FlowSession, Chat.aiEnabled/pipelineStage) — precisa rodar uma
+  // mensagem de cada vez, nunca em paralelo. Sem esse lock, duas mensagens
+  // do mesmo contato chegando quase juntas (comum quando a pessoa manda a
+  // resposta "em pedaços") disparam duas invocações concorrentes deste
+  // webhook, cada uma lendo o mesmo estado desatualizado e a que terminar
+  // por último sobrescrevendo o resultado da primeira — foi exatamente
+  // esse bug relatado: a cliente mandou nome/aniversário/dia e, segundos
+  // depois, o horário exato numa segunda mensagem; a segunda foi processada
+  // com um estado "velho" (sem saber que a primeira já tinha coletado tudo),
+  // fazendo a IA perguntar os mesmos dados de novo.
+  const lockAcquired = await acquireContactLockWithRetry(userId, contactPhone);
+  if (!lockAcquired) {
+    console.warn(
+      "[flow-engine] Não foi possível reservar o processamento deste contato a tempo (outra mensagem dele ainda estava sendo processada) — mensagem registrada, automação pulada nesta rodada:",
       { userId, contactPhone }
     );
     return;
   }
+
+  try {
+    // Relê o chat: pode ter mudado (aiEnabled, pipelineStage) enquanto
+    // esperávamos uma chamada concorrente anterior liberar o lock.
+    chat = await prisma.chat.findUniqueOrThrow({ where: { id: chat.id } });
+
+    // Cliente recorrente: se este contato já tinha concluído o funil antes
+    // (coluna "Agendamento Concluído" no Kanban de /pipeline) e escreveu de
+    // novo, isso é um NOVO ciclo de atendimento — precisa acontecer ANTES do
+    // gate de `aiEnabled` logo abaixo, porque a IA sempre é desligada para
+    // essa conversa no momento do handoff (ver `disablesAiForChat`) e, sem
+    // reativar aqui, a mensagem seria descartada silenciosamente pelo gate e
+    // a cliente nunca receberia resposta nenhuma. Move o card pra "Cliente
+    // Recorrente" e reativa a IA SEMPRE, mesmo com a chave geral desligada —
+    // diferente de contato novo, a chave geral não deve se aplicar aqui: quem
+    // já é cliente não deve ficar sem resposta só porque a chave (pensada pra
+    // controlar contatos desconhecidos) está desligada no momento.
+    if (chat.pipelineStage === "AGENDAMENTO_CONCLUIDO") {
+      chat = await prisma.chat.update({
+        where: { id: chat.id },
+        data: { pipelineStage: "CLIENTE_RECORRENTE", aiEnabled: true },
+      });
+    }
+
+    if (!chat.aiEnabled) {
+      console.log(
+        "[flow-engine] IA pausada para este contato (intervenção manual) — mensagem registrada, sem resposta automática:",
+        { userId, contactPhone }
+      );
+      return;
+    }
+
+    await runFlowForContact({ userId, flow, contactPhone, contactName, effectiveText, chat });
+  } finally {
+    await releaseContactLock(userId, contactPhone);
+  }
+}
+
+/** Corpo principal do motor (andar pelo grafo) — extraído à parte só para ficar claro o que roda DENTRO do lock de processamento por contato (ver `processIncomingMessage`). */
+async function runFlowForContact(params: {
+  userId: string;
+  flow: { id: string; nodes: unknown; edges: unknown };
+  contactPhone: string;
+  contactName?: string;
+  effectiveText: string;
+  chat: { id: string };
+}): Promise<void> {
+  const { userId, flow, contactPhone, contactName, effectiveText, chat } = params;
 
   const nodes = (flow.nodes as FlowNode[]) ?? [];
   const edges = (flow.edges as FlowGraphEdge[]) ?? [];
