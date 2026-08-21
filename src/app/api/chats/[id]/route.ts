@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getTenantId } from "@/lib/tenant";
+import { writeAuditLog } from "@/lib/audit";
 
 // DELETE /api/chats/:id — exclui a conversa inteira (só no SaaS, nunca no
 // WhatsApp do contato). `Message` é apagado em cascata (onDelete: Cascade no
@@ -30,13 +31,11 @@ export async function DELETE(_request: Request, { params }: { params: { id: stri
 
   await prisma.chat.delete({ where: { id: params.id } });
 
-  await prisma.auditLog.create({
-    data: {
-      userId: session.user.id,
-      action: "CHAT_DELETED",
-      target: params.id,
-      metadata: { contactName: chat.contactName, contactPhone: chat.contactPhone },
-    },
+  await writeAuditLog({
+    actor: session.user,
+    action: "CHAT_DELETED",
+    target: params.id,
+    metadata: { contactName: chat.contactName, contactPhone: chat.contactPhone },
   });
 
   return NextResponse.json({ ok: true });

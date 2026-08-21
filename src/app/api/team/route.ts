@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateTemporaryPassword } from "@/lib/utils";
+import { writeAuditLog } from "@/lib/audit";
 
 const createEmployeeSchema = z.object({
   name: z.string().min(2, "Informe o nome completo"),
@@ -73,8 +74,11 @@ export async function POST(request: Request) {
     },
   });
 
-  await prisma.auditLog.create({
-    data: { userId: session.user.id, action: "EMPLOYEE_CREATED", target: employee.id },
+  await writeAuditLog({
+    actor: session.user,
+    action: "EMPLOYEE_CREATED",
+    target: employee.id,
+    metadata: { employeeName: employee.name },
   });
 
   return NextResponse.json({

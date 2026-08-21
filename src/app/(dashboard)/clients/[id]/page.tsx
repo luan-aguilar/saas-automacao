@@ -100,8 +100,8 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
         entries={auditLog.map((entry) => ({
           id: entry.id,
           action: entry.action,
-          actorName: entry.user.name,
-          actorRole: entry.user.role,
+          actorName: entry.actorName,
+          actorRole: entry.actorRole,
           metadata: entry.metadata as Record<string, unknown> | null,
           createdAt: entry.createdAt.toISOString(),
         }))}

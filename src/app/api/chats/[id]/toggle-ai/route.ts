@@ -3,6 +3,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getTenantId } from "@/lib/tenant";
+import { writeAuditLog } from "@/lib/audit";
 
 const schema = z.object({ aiEnabled: z.boolean() });
 
@@ -58,13 +59,11 @@ export async function POST(request: Request, { params }: { params: { id: string 
   // transparência que interessa ao dono do tenant (ver a movimentação de
   // leads da equipe dele), não cada clique do próprio dono no toggle.
   if (session.user.role === "FUNCIONARIO") {
-    await prisma.auditLog.create({
-      data: {
-        userId: session.user.id,
-        action: parsed.data.aiEnabled ? "CHAT_AI_REACTIVATED" : "CHAT_AI_TAKEOVER",
-        target: params.id,
-        metadata: { contactName: chat.contactName, contactPhone: chat.contactPhone },
-      },
+    await writeAuditLog({
+      actor: session.user,
+      action: parsed.data.aiEnabled ? "CHAT_AI_REACTIVATED" : "CHAT_AI_TAKEOVER",
+      target: params.id,
+      metadata: { contactName: chat.contactName, contactPhone: chat.contactPhone },
     });
   }
 

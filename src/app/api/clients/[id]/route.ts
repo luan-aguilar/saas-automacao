@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateTemporaryPassword } from "@/lib/utils";
+import { writeAuditLog } from "@/lib/audit";
 
 const updateSchema = z.object({
   action: z.enum(["ACTIVATE", "DEACTIVATE", "RESET_PASSWORD"]),
@@ -30,8 +31,11 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   if (parsed.data.action === "ACTIVATE" || parsed.data.action === "DEACTIVATE") {
     const status = parsed.data.action === "ACTIVATE" ? "ACTIVE" : "INACTIVE";
     await prisma.user.update({ where: { id: client.id }, data: { status } });
-    await prisma.auditLog.create({
-      data: { userId: session.user.id, action: `CLIENT_${parsed.data.action}D`, target: client.id },
+    await writeAuditLog({
+      actor: session.user,
+      action: `CLIENT_${parsed.data.action}D`,
+      target: client.id,
+      metadata: { clientName: client.name },
     });
     return NextResponse.json({ ok: true });
   }
@@ -43,8 +47,11 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     where: { id: client.id },
     data: { passwordHash, mustChangePassword: true },
   });
-  await prisma.auditLog.create({
-    data: { userId: session.user.id, action: "PASSWORD_RESET", target: client.id },
+  await writeAuditLog({
+    actor: session.user,
+    action: "PASSWORD_RESET",
+    target: client.id,
+    metadata: { clientName: client.name },
   });
 
   return NextResponse.json({ ok: true, temporaryPassword });

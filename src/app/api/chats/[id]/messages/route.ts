@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { sendWhatsappMessage } from "@/lib/whatsapp-service";
 import { getTenantId } from "@/lib/tenant";
+import { writeAuditLog } from "@/lib/audit";
 
 async function assertOwnership(chatId: string, userId: string) {
   const chat = await prisma.chat.findUnique({ where: { id: chatId } });
@@ -143,6 +144,22 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
   }
 
   await refreshChatPreview(params.id);
+
+  // Só registramos quando é um FUNCIONARIO apagando histórico — mesmo
+  // raciocínio do toggle de IA e da movimentação no funil: é a
+  // transparência que interessa ao dono, não cada ação dele mesmo.
+  if (session.user.role === "FUNCIONARIO") {
+    await writeAuditLog({
+      actor: session.user,
+      action: "CHAT_CLEARED",
+      target: params.id,
+      metadata: {
+        contactName: chat.contactName,
+        contactPhone: chat.contactPhone,
+        mode: "clearAll" in parsed.data ? "conversa inteira" : `${parsed.data.messageIds.length} mensagem(ns)`,
+      },
+    });
+  }
 
   return NextResponse.json({ ok: true });
 }

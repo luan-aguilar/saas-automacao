@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { formatPhone } from "@/lib/utils";
-import { Plus, KeyRound, Power, Copy, Check } from "lucide-react";
+import { Plus, KeyRound, Power, Copy, Check, Pencil, Trash2 } from "lucide-react";
 
 type EmployeeRow = {
   id: string;
@@ -23,6 +23,8 @@ type EmployeeRow = {
 export function TeamManager({ initialEmployees }: { initialEmployees: EmployeeRow[] }) {
   const [employees, setEmployees] = useState(initialEmployees);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [formError, setFormError] = useState<string | null>(null);
   const [generatedCredentials, setGeneratedCredentials] = useState<{
@@ -79,6 +81,46 @@ export function TeamManager({ initialEmployees }: { initialEmployees: EmployeeRo
         setGeneratedCredentials({ email: employee.email, password: data.temporaryPassword });
       }
     }
+
+    refreshList();
+  }
+
+  async function handleUpdate(id: string, formData: FormData) {
+    setEditError(null);
+    const payload = {
+      action: "UPDATE" as const,
+      name: String(formData.get("name") ?? ""),
+      email: String(formData.get("email") ?? ""),
+      phone: String(formData.get("phone") ?? ""),
+    };
+
+    const res = await fetch(`/api/team/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      setEditError(data.error ?? "Erro ao salvar as alterações");
+      return;
+    }
+
+    setEditingId(null);
+    refreshList();
+  }
+
+  async function handleDelete(id: string, name: string) {
+    if (
+      !window.confirm(
+        `Excluir definitivamente a conta de ${name}? Ela perde o acesso imediatamente. O histórico de ações que essa pessoa já realizou continua registrado.`
+      )
+    ) {
+      return;
+    }
+
+    const res = await fetch(`/api/team/${id}`, { method: "DELETE" });
+    if (!res.ok) return;
 
     refreshList();
   }
@@ -168,47 +210,118 @@ export function TeamManager({ initialEmployees }: { initialEmployees: EmployeeRo
                 </tr>
               </thead>
               <tbody>
-                {employees.map((employee) => (
-                  <tr key={employee.id} className="border-t border-border">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <Avatar name={employee.name} />
-                        <div>
-                          <p className="font-medium">{employee.name}</p>
-                          <p className="text-xs text-muted-foreground">{employee.email}</p>
+                {employees.map((employee) =>
+                  editingId === employee.id ? (
+                    <tr key={employee.id} className="border-t border-border bg-muted/20">
+                      <td colSpan={4} className="px-4 py-3">
+                        <form
+                          action={(formData) => handleUpdate(employee.id, formData)}
+                          className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end"
+                        >
+                          <div className="space-y-1.5">
+                            <Label htmlFor={`edit-name-${employee.id}`}>Nome</Label>
+                            <Input id={`edit-name-${employee.id}`} name="name" defaultValue={employee.name} required />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label htmlFor={`edit-email-${employee.id}`}>E-mail</Label>
+                            <Input
+                              id={`edit-email-${employee.id}`}
+                              name="email"
+                              type="email"
+                              defaultValue={employee.email}
+                              required
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label htmlFor={`edit-phone-${employee.id}`}>Telefone (WhatsApp)</Label>
+                            <Input
+                              id={`edit-phone-${employee.id}`}
+                              name="phone"
+                              defaultValue={employee.phone ?? ""}
+                              required
+                            />
+                          </div>
+                          <div className="flex items-center gap-2 sm:col-span-3">
+                            {editError && <p className="text-sm text-destructive">{editError}</p>}
+                            <Button type="submit" size="sm">
+                              Salvar
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setEditingId(null);
+                                setEditError(null);
+                              }}
+                            >
+                              Cancelar
+                            </Button>
+                          </div>
+                        </form>
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr key={employee.id} className="border-t border-border">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <Avatar name={employee.name} />
+                          <div>
+                            <p className="font-medium">{employee.name}</p>
+                            <p className="text-xs text-muted-foreground">{employee.email}</p>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">{employee.phone ? formatPhone(employee.phone) : "-"}</td>
-                    <td className="px-4 py-3">
-                      <Badge variant={employee.status === "ACTIVE" ? "success" : "destructive"}>
-                        {employee.status === "ACTIVE" ? "Ativo" : "Inativo"}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          title="Redefinir senha"
-                          onClick={() => handleAction(employee.id, "RESET_PASSWORD")}
-                        >
-                          <KeyRound className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={employee.status === "ACTIVE" ? "destructive" : "default"}
-                          title={employee.status === "ACTIVE" ? "Desativar" : "Ativar"}
-                          onClick={() =>
-                            handleAction(employee.id, employee.status === "ACTIVE" ? "DEACTIVATE" : "ACTIVATE")
-                          }
-                        >
-                          <Power className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-4 py-3">{employee.phone ? formatPhone(employee.phone) : "-"}</td>
+                      <td className="px-4 py-3">
+                        <Badge variant={employee.status === "ACTIVE" ? "success" : "destructive"}>
+                          {employee.status === "ACTIVE" ? "Ativo" : "Inativo"}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            title="Editar dados"
+                            onClick={() => {
+                              setEditError(null);
+                              setEditingId(employee.id);
+                            }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            title="Redefinir senha"
+                            onClick={() => handleAction(employee.id, "RESET_PASSWORD")}
+                          >
+                            <KeyRound className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={employee.status === "ACTIVE" ? "destructive" : "default"}
+                            title={employee.status === "ACTIVE" ? "Desativar" : "Ativar"}
+                            onClick={() =>
+                              handleAction(employee.id, employee.status === "ACTIVE" ? "DEACTIVATE" : "ACTIVATE")
+                            }
+                          >
+                            <Power className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            title="Excluir definitivamente"
+                            onClick={() => handleDelete(employee.id, employee.name)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                )}
                 {employees.length === 0 && (
                   <tr>
                     <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">

@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateTemporaryPassword } from "@/lib/utils";
+import { writeAuditLog } from "@/lib/audit";
 
 const createClientSchema = z.object({
   name: z.string().min(2, "Informe o nome completo"),
@@ -76,12 +77,11 @@ export async function POST(request: Request) {
     },
   });
 
-  await prisma.auditLog.create({
-    data: {
-      userId: session.user.id,
-      action: "CLIENT_CREATED",
-      target: client.id,
-    },
+  await writeAuditLog({
+    actor: session.user,
+    action: "CLIENT_CREATED",
+    target: client.id,
+    metadata: { clientName: client.name },
   });
 
   // Retorna a senha temporária UMA única vez, para que o MASTER a envie por WhatsApp/e-mail.

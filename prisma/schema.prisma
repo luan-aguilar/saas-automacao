@@ -340,9 +340,27 @@ model Message {
 // ---------------------------------------------------------------------------
 
 model AuditLog {
-  id     String @id @default(cuid())
-  userId String // quem executou a ação (geralmente um MASTER)
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String  @id @default(cuid())
+  // Nulo quando a conta do autor foi excluída depois (ex: dono excluindo um
+  // funcionário desligado) — nesse caso o registro sobrevive mesmo assim,
+  // usando o snapshot abaixo. `onDelete: SetNull` em vez de `Cascade` de
+  // propósito: apagar quem fez a ação NÃO deve apagar a prova do que foi
+  // feito, que é justamente o cenário em que esse histórico mais importa.
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // Snapshot do autor no momento da ação, pra o histórico continuar legível
+  // (nome, papel) mesmo que a conta seja excluída depois.
+  actorName String
+  actorRole Role
+
+  // Preenchido só quando o autor é um FUNCIONARIO — aponta pro dono do
+  // tenant (User.id) dono da ação, permitindo listar "só o que a equipe
+  // fez" sem depender de um JOIN vivo com `User` (que se perderia se o
+  // funcionário fosse excluído). Ações do próprio dono/MASTER (ex:
+  // EMPLOYEE_CREATED) ficam com isso nulo de propósito — não aparecem no
+  // histórico da equipe.
+  tenantOwnerId String?
 
   action  String // ex: "CLIENT_CREATED", "CLIENT_DEACTIVATED", "PASSWORD_RESET"
   target  String? // id do recurso afetado
@@ -351,6 +369,7 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   @@index([userId])
+  @@index([tenantOwnerId])
 }
 
 // ---------------------------------------------------------------------------

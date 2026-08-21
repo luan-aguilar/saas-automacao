@@ -20,6 +20,9 @@ function describeMetadata(metadata: Record<string, unknown> | null): string | nu
   if (typeof metadata.from === "string" && typeof metadata.to === "string") {
     return `${contactName}: ${metadata.from} → ${metadata.to}`;
   }
+  if (typeof metadata.mode === "string") {
+    return `${contactName} (${metadata.mode})`;
+  }
   return contactName;
 }
 
@@ -27,10 +30,10 @@ export function AuditLogTable({ entries }: { entries: AuditEntry[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Histórico de ações</CardTitle>
+        <CardTitle>Histórico de ações da equipe</CardTitle>
         <CardDescription>
-          Registro de tudo que a equipe (e o dono da conta) fizeram — movimentação no funil, atendimento
-          assumido manualmente, contas criadas/desativadas.
+          Registro do que cada conta de equipe fez — movimentação no funil, atendimento assumido
+          manualmente, histórico de conversa limpo. Ações do próprio dono não aparecem aqui.
         </CardDescription>
       </CardHeader>
       <CardContent className="p-0">

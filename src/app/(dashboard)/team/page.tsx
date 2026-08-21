@@ -45,8 +45,8 @@ export default async function TeamPage() {
         entries={auditLog.map((entry) => ({
           id: entry.id,
           action: entry.action,
-          actorName: entry.user.name,
-          actorRole: entry.user.role,
+          actorName: entry.actorName,
+          actorRole: entry.actorRole,
           metadata: entry.metadata as Record<string, unknown> | null,
           createdAt: entry.createdAt.toISOString(),
         }))}

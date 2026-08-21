@@ -3,6 +3,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getTenantId } from "@/lib/tenant";
+import { writeAuditLog } from "@/lib/audit";
 
 const schema = z.object({
   stage: z.enum(["PRIMEIRO_ATENDIMENTO", "CLIENTE_RECORRENTE", "AGUARDANDO_HUMANO", "AGENDAMENTO_CONCLUIDO"]),
@@ -40,17 +41,15 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   // movimentação que o dono do tenant quer poder auditar (quem moveu qual
   // lead pra qual etapa).
   if (session.user.role === "FUNCIONARIO" && chat.pipelineStage !== parsed.data.stage) {
-    await prisma.auditLog.create({
-      data: {
-        userId: session.user.id,
-        action: "PIPELINE_STAGE_CHANGED",
-        target: params.id,
-        metadata: {
-          contactName: chat.contactName,
-          contactPhone: chat.contactPhone,
-          from: chat.pipelineStage,
-          to: parsed.data.stage,
-        },
+    await writeAuditLog({
+      actor: session.user,
+      action: "PIPELINE_STAGE_CHANGED",
+      target: params.id,
+      metadata: {
+        contactName: chat.contactName,
+        contactPhone: chat.contactPhone,
+        from: chat.pipelineStage,
+        to: parsed.data.stage,
       },
     });
   }
