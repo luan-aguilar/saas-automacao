@@ -278,6 +278,119 @@ export function NodeConfigDrawer({
           </>
         )}
 
+        {node.type === "googleCalendarSlots" && (
+          <>
+            <p className="text-xs text-muted-foreground">
+              Consulta a agenda Google conectada (ver Configurações → Integração Google) e grava os horários
+              livres em <code>{"{{slots_message}}"}</code> (texto pronto, numerado) e{" "}
+              <code>{"{{slot_1_iso}}"}</code>/<code>{"{{slot_2_iso}}"}</code>/... — use uma Mensagem Estática
+              logo depois pra apresentar <code>{"{{slots_message}}"}</code> ao contato.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Dias úteis à frente</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={data.daysAhead ?? 3}
+                  onChange={(e) => update({ daysAhead: Number(e.target.value) })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Quantos horários oferecer</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={9}
+                  value={data.slotsWanted ?? 3}
+                  onChange={(e) => update({ slotsWanted: Number(e.target.value) })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Duração (minutos)</Label>
+                <Input
+                  type="number"
+                  min={15}
+                  step={15}
+                  value={data.slotDurationMinutes ?? 60}
+                  onChange={(e) => update({ slotDurationMinutes: Number(e.target.value) })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Antecedência mínima (horas)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={data.minLeadHours ?? 2}
+                  onChange={(e) => update({ minLeadHours: Number(e.target.value) })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Expediente — início</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={23}
+                  value={data.businessHourStart ?? 9}
+                  onChange={(e) => update({ businessHourStart: Number(e.target.value) })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Expediente — fim</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={24}
+                  value={data.businessHourEnd ?? 18}
+                  onChange={(e) => update({ businessHourEnd: Number(e.target.value) })}
+                />
+              </div>
+            </div>
+          </>
+        )}
+
+        {node.type === "googleCalendarBook" && (
+          <>
+            <div className="space-y-1.5">
+              <Label>Título do evento</Label>
+              <Input
+                value={data.eventTitleTemplate ?? ""}
+                onChange={(e) => update({ eventTitleTemplate: e.target.value })}
+                placeholder="Diagnóstico Comercial - {{lead_nome}}"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Descrição do evento</Label>
+              <Textarea
+                value={data.eventDescriptionTemplate ?? ""}
+                onChange={(e) => update({ eventDescriptionTemplate: e.target.value })}
+                rows={3}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Linha da planilha (opcional)</Label>
+              <Textarea
+                value={data.sheetRowTemplate ?? ""}
+                onChange={(e) => update({ sheetRowTemplate: e.target.value })}
+                rows={6}
+                placeholder={"{{lead_nome}}\n{{contactPhone}}\n{{segmento_empresa}}"}
+              />
+              <p className="text-xs text-muted-foreground">
+                Uma linha de texto aqui = uma coluna na planilha, na ordem (aba &ldquo;Leads&rdquo;
+                configurada em Configurações → Integração Google). Aceita variáveis. Deixe em branco pra não
+                gravar na planilha.
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Ao rodar, cria o evento (com link do Google Meet) no horário escolhido pelo contato — usa a
+              variável <code>{"{{escolha_horario}}"}</code> (definida por um bloco de IA/Condição anterior,
+              ex: &ldquo;1&rdquo;/&ldquo;2&rdquo;/&ldquo;3&rdquo;) cruzada com{" "}
+              <code>{"{{slot_1_iso}}"}</code>/etc. Grava <code>{"{{meet_link}}"}</code> e{" "}
+              <code>{"{{horario_agendado_formatado}}"}</code> pro bloco seguinte usar.
+            </p>
+          </>
+        )}
+
         {node.type === "condition" && (
           <>
             <div className="space-y-1.5">

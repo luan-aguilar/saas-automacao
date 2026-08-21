@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getTenantId } from "@/lib/tenant";
 import { SettingsForm } from "@/components/settings/settings-form";
+import { GoogleIntegrationCard } from "@/components/settings/google-integration-card";
 
 export default async function SettingsPage() {
   const session = await auth();
@@ -31,6 +32,9 @@ export default async function SettingsPage() {
               : null
           }
         />
+        <div className="mt-6">
+          <GoogleIntegrationCard />
+        </div>
       </div>
     </div>
   );

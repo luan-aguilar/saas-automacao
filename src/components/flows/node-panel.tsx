@@ -1,12 +1,20 @@
 "use client";
 
-import { Zap, Sparkles, MessageSquare, GitFork, BellRing, Webhook, X } from "lucide-react";
+import { Zap, Sparkles, MessageSquare, GitFork, BellRing, Webhook, CalendarSearch, CalendarCheck2, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const paletteItems: {
-  type: "trigger" | "aiResponse" | "staticMessage" | "condition" | "alertNotification" | "webhook";
+  type:
+    | "trigger"
+    | "aiResponse"
+    | "staticMessage"
+    | "condition"
+    | "alertNotification"
+    | "webhook"
+    | "googleCalendarSlots"
+    | "googleCalendarBook";
   label: string;
   description: string;
   icon: LucideIcon;
@@ -53,6 +61,20 @@ const paletteItems: {
     description: "Envia os dados coletados pra outra ferramenta (ex: n8n, Zapier)",
     icon: Webhook,
     colorClass: "bg-teal-600",
+  },
+  {
+    type: "googleCalendarSlots",
+    label: "Agenda: Buscar Horários",
+    description: "Consulta horários livres na agenda Google conectada",
+    icon: CalendarSearch,
+    colorClass: "bg-blue-600",
+  },
+  {
+    type: "googleCalendarBook",
+    label: "Agenda: Confirmar Agendamento",
+    description: "Cria o evento (com Meet) e registra o lead na planilha",
+    icon: CalendarCheck2,
+    colorClass: "bg-blue-700",
   },
 ];
 

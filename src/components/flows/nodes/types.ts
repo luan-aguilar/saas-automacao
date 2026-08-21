@@ -130,12 +130,43 @@ export type WebhookData = {
   url: string;
 };
 
+export type GoogleCalendarSlotsData = {
+  label: string;
+  /** Quantos dias ÚTEIS (pula fim de semana) a partir de hoje entram na busca. */
+  daysAhead: number;
+  /** Quantas opções de horário oferecer (ex: 3). */
+  slotsWanted: number;
+  /** Duração de cada horário, em minutos. */
+  slotDurationMinutes: number;
+  /** Início/fim do expediente considerado, em hora cheia (0-23). */
+  businessHourStart: number;
+  businessHourEnd: number;
+  /** Não oferece horários a menos de X horas do momento atual. */
+  minLeadHours: number;
+};
+
+export type GoogleCalendarBookData = {
+  label: string;
+  /** Título do evento criado — aceita variáveis, ex: "Diagnóstico Comercial - {{lead_nome}}". */
+  eventTitleTemplate: string;
+  /** Descrição do evento — aceita variáveis. */
+  eventDescriptionTemplate: string;
+  /**
+   * Uma linha da planilha (aba "Leads" da integração Google, ver
+   * `GoogleIntegration`) por linha de texto aqui — cada linha vira uma
+   * coluna, na ordem. Aceita variáveis. Vazio = não grava na planilha.
+   */
+  sheetRowTemplate?: string;
+};
+
 export type TriggerNode = Node<TriggerData, "trigger">;
 export type AiResponseNode = Node<AiResponseData, "aiResponse">;
 export type StaticMessageNode = Node<StaticMessageData, "staticMessage">;
 export type ConditionNode = Node<ConditionData, "condition">;
 export type AlertNotificationNode = Node<AlertNotificationData, "alertNotification">;
 export type WebhookNode = Node<WebhookData, "webhook">;
+export type GoogleCalendarSlotsNode = Node<GoogleCalendarSlotsData, "googleCalendarSlots">;
+export type GoogleCalendarBookNode = Node<GoogleCalendarBookData, "googleCalendarBook">;
 
 export type FlowNode =
   | TriggerNode
@@ -143,6 +174,8 @@ export type FlowNode =
   | StaticMessageNode
   | ConditionNode
   | AlertNotificationNode
+  | GoogleCalendarSlotsNode
+  | GoogleCalendarBookNode
   | WebhookNode;
 
 /** Extrai os nomes de variáveis {{assim}} usados em um texto (sem duplicatas). */

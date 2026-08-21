@@ -114,6 +114,7 @@ model User {
 
   config             Config?
   whatsappConnection WhatsappConnection?
+  googleIntegration  GoogleIntegration?
   flows              Flow[]
   flowSessions       FlowSession[]
   chats              Chat[]
@@ -214,6 +215,43 @@ model WhatsappConnection {
 
   lastConnectedAt    DateTime?
   lastDisconnectedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Integração Google (Calendar + Sheets) — usada pelos blocos "Agenda: Buscar
+// Horários" / "Agenda: Confirmar Agendamento" do Construtor de Fluxos.
+// Conexão via OAuth2 (ver `src/lib/google-api.ts`): o refresh token guardado
+// aqui permite ao motor de fluxo consultar/criar eventos numa agenda (a
+// própria ou uma compartilhada, ex: a do gestor comercial) e gravar linhas
+// numa planilha, sem depender de nenhuma ferramenta externa (n8n/Zapier).
+// ---------------------------------------------------------------------------
+
+model GoogleIntegration {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // E-mail da conta Google que autorizou a conexão — só para exibição.
+  googleEmail String?
+
+  // Refresh token criptografado (AES-256-GCM, ver `src/lib/encryption.ts`) —
+  // é ele que permite ao servidor obter novos access tokens sozinho,
+  // indefinidamente, sem o usuário precisar refazer o consentimento.
+  refreshTokenEncrypted String @db.Text
+
+  // Agenda a consultar/criar eventos — pode ser "primary" (a própria) ou o
+  // e-mail de uma agenda compartilhada com a conta conectada (ex: a do
+  // gestor comercial, quando ele deu acesso de edição pelo Google Calendar).
+  calendarId String  @default("primary")
+  timezone   String  @default("America/Sao_Paulo")
+
+  // Planilha (Google Sheets) onde os leads qualificados são registrados.
+  spreadsheetId     String?
+  leadsSheetName    String  @default("Leads")
+  sessionsSheetName String  @default("Sessoes")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

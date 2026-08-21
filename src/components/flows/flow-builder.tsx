@@ -29,6 +29,8 @@ import { StaticMessageNodeComponent } from "./nodes/static-message-node";
 import { ConditionNodeComponent } from "./nodes/condition-node";
 import { AlertNotificationNodeComponent } from "./nodes/alert-notification-node";
 import { WebhookNodeComponent } from "./nodes/webhook-node";
+import { GoogleCalendarSlotsNodeComponent } from "./nodes/google-calendar-slots-node";
+import { GoogleCalendarBookNodeComponent } from "./nodes/google-calendar-book-node";
 import { getTemplateDefinition } from "@/lib/templates/registry";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +43,8 @@ const nodeTypes: NodeTypes = {
   condition: ConditionNodeComponent,
   alertNotification: AlertNotificationNodeComponent,
   webhook: WebhookNodeComponent,
+  googleCalendarSlots: GoogleCalendarSlotsNodeComponent,
+  googleCalendarBook: GoogleCalendarBookNodeComponent,
 };
 
 const edgeTypes: EdgeTypes = {
@@ -74,6 +78,23 @@ function defaultDataFor(type: string): Record<string, unknown> {
       };
     case "webhook":
       return { label: "Webhook / Automação Externa", url: "" };
+    case "googleCalendarSlots":
+      return {
+        label: "Agenda: Buscar Horários",
+        daysAhead: 3,
+        slotsWanted: 3,
+        slotDurationMinutes: 60,
+        businessHourStart: 9,
+        businessHourEnd: 18,
+        minLeadHours: 2,
+      };
+    case "googleCalendarBook":
+      return {
+        label: "Agenda: Confirmar Agendamento",
+        eventTitleTemplate: "Diagnóstico Comercial - {{lead_nome}}",
+        eventDescriptionTemplate: "Agendado automaticamente pelo robô.",
+        sheetRowTemplate: "",
+      };
     default:
       return { label: "Bloco" };
   }

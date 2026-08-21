@@ -24,31 +24,30 @@
  *      base de conhecimento da empresa (`KNOWLEDGE_BASE`, extraída do site
  *      https://digitalanalyticsmkt.vercel.app/) e depois retomar a mesma
  *      pergunta — nunca avança sem capturar o dado certo.
- *   -> Webhook "buscar horários" (`da-webhook-slots`): dispara pro n8n (URL a
- *      configurar — ver nota abaixo) com todos os dados já coletados; espera
- *      de volta um JSON com `slots_message` (texto pronto, já numerado em
- *      emoji) e `slot_1_iso`/`slot_2_iso`/`slot_3_iso` (os 3 horários, em
- *      ISO 8601) — ver contrato completo no comentário de `da-webhook-slots`.
+ *   -> Bloco nativo "Agenda: Buscar Horários" (`da-agenda-slots`): consulta a
+ *      agenda Google conectada pelo tenant (ver Configurações → Integração
+ *      Google / `GoogleIntegration`) e grava `slots_message` (texto pronto,
+ *      numerado em emoji) e `slot_1_iso`/`slot_2_iso`/`slot_3_iso`.
  *   -> Mensagem com os 3 horários (texto puro, pausa esperando resposta)
  *   -> Node de IA que identifica qual das 3 opções o cliente escolheu
  *      (`escolha_horario` = "1"/"2"/"3")
- *   -> Webhook "confirmar agendamento" (`da-webhook-book`): dispara pro n8n
- *      de novo, agora com `escolha_horario` incluído — o n8n resolve pra qual
- *      ISO isso corresponde, cria o evento no Google Calendar (com o Meet),
- *      grava nas abas "Leads"/"Sessões" da planilha, e avisa o Lucas por
- *      WhatsApp (TUDO isso fica por conta do n8n, não duplicamos aqui —
- *      decisão explícita do Luan). Espera de volta um `confirmation_message`
- *      já pronto pra mandar ao cliente.
- *   -> Mensagem final com `{{confirmation_message}}` — fim do fluxo.
+ *   -> Bloco nativo "Agenda: Confirmar Agendamento" (`da-agenda-book`): cria
+ *      o evento na agenda Google (com Google Meet), grava a linha na aba
+ *      "Leads" da planilha configurada, e devolve `meet_link` +
+ *      `horario_agendado_formatado`.
+ *   -> Notificação/Alerta pro Lucas (gestor comercial) com os dados do lead.
+ *   -> Mensagem final de confirmação pro cliente, com o link do Meet.
  *
  * ---------------------------------------------------------------------------
- * IMPORTANTE — URLS DOS WEBHOOKS AINDA PRECISAM SER CONFIGURADAS
+ * PRÉ-REQUISITO — CONECTAR O GOOGLE ANTES DE ATIVAR ESTE FLUXO
  * ---------------------------------------------------------------------------
- * `da-webhook-slots` e `da-webhook-book` nascem com `url: ""` de propósito —
- * o Luan precisa colar as URLs reais do n8n em cada bloco pelo Construtor de
- * Fluxos (mesmo princípio do `recipientPhones` vazio no template do salão).
- * Contrato esperado de cada webhook (ver comentário specific em cada node
- * abaixo pro payload de entrada e o formato de resposta esperado).
+ * Os blocos de Agenda dependem de uma conta Google conectada em
+ * Configurações → Integração Google (OAuth — Calendar + Sheets), com a
+ * agenda (`calendarId`, ex: o e-mail do Lucas, se a agenda dele estiver
+ * compartilhada com a conta conectada) e a planilha (`spreadsheetId`)
+ * configuradas. Sem isso, os blocos falham e o contato fica parado
+ * aguardando um atendente. `da-alerta-lucas` nasce com `recipientPhones: [""]`
+ * — configurar o WhatsApp do Lucas antes de ativar.
  */
 
 import type { Node, Edge } from "@xyflow/react";
@@ -261,23 +260,20 @@ const NODES: Node[] = [
     },
   },
 
-  // ===== AGENDA (via n8n) =====
-  //
-  // CONTRATO ESPERADO — "buscar horários":
-  //   Envio (POST, JSON): todas as variáveis coletadas até aqui
-  //   (lead_nome, segmento_empresa, quem_atende, sistema_crm, trafego_pago,
-  //   desafio_comercial) + contactPhone.
-  //   Resposta esperada (JSON): {
-  //     "slots_message": "1️⃣ 24/08 às 09:00\n2️⃣ 24/08 às 10:00\n3️⃣ 24/08 às 11:00",
-  //     "slot_1_iso": "2026-08-24T09:00:00-03:00",
-  //     "slot_2_iso": "2026-08-24T10:00:00-03:00",
-  //     "slot_3_iso": "2026-08-24T11:00:00-03:00"
-  //   }
+  // ===== AGENDA (nativa — Google Calendar/Sheets, ver src/lib/google-api.ts) =====
   {
-    id: "da-webhook-slots",
-    type: "webhook",
+    id: "da-agenda-slots",
+    type: "googleCalendarSlots",
     position: { x: 600, y: 1820 },
-    data: { label: "Webhook — buscar horários disponíveis (n8n)", url: "" },
+    data: {
+      label: "Agenda: Buscar Horários",
+      daysAhead: 3,
+      slotsWanted: 3,
+      slotDurationMinutes: 60,
+      businessHourStart: 9,
+      businessHourEnd: 18,
+      minLeadHours: 2,
+    },
   },
 
   plainTextNode("da-ask-horario", { x: 600, y: 1960 }, "Apresenta horários disponíveis", ASK_HORARIO_MESSAGE, true),
@@ -307,23 +303,65 @@ d) Seja objetivo e cordial — mensagens curtas.`,
     },
   },
 
-  // CONTRATO ESPERADO — "confirmar agendamento":
-  //   Envio (POST, JSON): tudo que já foi enviado no webhook anterior +
-  //   slot_1_iso/slot_2_iso/slot_3_iso + escolha_horario ("1"/"2"/"3") — o
-  //   n8n resolve qual ISO usar, cria o evento no Google Calendar (com Meet),
-  //   grava nas abas "Leads"/"Sessões" da planilha, e avisa o Lucas por
-  //   WhatsApp com os dados do lead (formato já usado hoje pelo n8n).
-  //   Resposta esperada (JSON): {
-  //     "confirmation_message": "Pronto — sua conversa foi agendada para 24/08 às 09:00. 🚀\n\nO convite com o link do Google Meet:\nhttps://meet.google.com/kka-uwky-cdp\n\nPor favor, esteja presente nesse link no dia e horário combinado. Até lá! 🙌"
-  //   }
   {
-    id: "da-webhook-book",
-    type: "webhook",
+    id: "da-agenda-book",
+    type: "googleCalendarBook",
     position: { x: 600, y: 2240 },
-    data: { label: "Webhook — confirmar agendamento (n8n)", url: "" },
+    data: {
+      label: "Agenda: Confirmar Agendamento",
+      eventTitleTemplate: "Diagnóstico Comercial - {{lead_nome}}",
+      eventDescriptionTemplate:
+        "Segmento: {{segmento_empresa}}\nQuem atende: {{quem_atende}}\nCRM: {{sistema_crm}}\nTráfego pago: {{trafego_pago}}\nDesafio: {{desafio_comercial}}\nWhatsApp: {{lead_phone}}",
+      sheetRowTemplate: `{{lead_nome}}
+{{lead_phone}}
+{{segmento_empresa}}
+{{quem_atende}}
+{{sistema_crm}}
+{{trafego_pago}}
+{{desafio_comercial}}
+{{horario_agendado_formatado}}
+{{data_atual}}
+{{meet_link}}`,
+    },
   },
 
-  plainTextNode("da-msg-confirmacao", { x: 600, y: 2380 }, "Mensagem final de confirmação", "{{confirmation_message}}", false),
+  // Notifica o Lucas (gestor comercial) — número a configurar (nasce vazio, ver comentário no topo do arquivo).
+  {
+    id: "da-alerta-lucas",
+    type: "alertNotification",
+    position: { x: 600, y: 2380 },
+    data: {
+      label: "Notificação: novo lead qualificado",
+      recipientPhones: [""],
+      message: `🔥 *NOVO LEAD QUALIFICADO* 🔥
+
+📅 *Data:* {{data_atual}}
+👤 *Nome:* {{lead_nome}}
+📱 *WhatsApp:* {{lead_phone}}
+🏢 *Segmento:* {{segmento_empresa}}
+
+👥 *Quem Atende:* {{quem_atende}}
+💻 *Sistema/CRM:* {{sistema_crm}}
+📈 *Tráfego Pago:* {{trafego_pago}}
+🎯 *Desafio Comercial:* {{desafio_comercial}}
+
+⏰ *Horário Diagnóstico:* {{horario_agendado_formatado}}
+🔗 *Link Google Meet:* {{meet_link}}`,
+    },
+  },
+
+  plainTextNode(
+    "da-msg-confirmacao",
+    { x: 600, y: 2520 },
+    "Mensagem final de confirmação",
+    `Pronto — sua conversa foi agendada para {{horario_agendado_formatado}}. 🚀
+
+O convite com o link do Google Meet:
+{{meet_link}}
+
+Por favor, esteja presente nesse link no dia e horário combinado. Até lá! 🙌`,
+    false
+  ),
 ];
 
 const EDGES: Edge[] = [
@@ -339,11 +377,12 @@ const EDGES: Edge[] = [
   edge("da-e-ask-trafego-ai-trafego", "da-ask-trafego", "da-ai-trafego"),
   edge("da-e-ai-trafego-ask-desafio", "da-ai-trafego", "da-ask-desafio"),
   edge("da-e-ask-desafio-ai-desafio", "da-ask-desafio", "da-ai-desafio"),
-  edge("da-e-ai-desafio-webhook-slots", "da-ai-desafio", "da-webhook-slots"),
-  edge("da-e-webhook-slots-ask-horario", "da-webhook-slots", "da-ask-horario"),
+  edge("da-e-ai-desafio-agenda-slots", "da-ai-desafio", "da-agenda-slots"),
+  edge("da-e-agenda-slots-ask-horario", "da-agenda-slots", "da-ask-horario"),
   edge("da-e-ask-horario-ai-escolha", "da-ask-horario", "da-ai-escolha-horario"),
-  edge("da-e-ai-escolha-webhook-book", "da-ai-escolha-horario", "da-webhook-book"),
-  edge("da-e-webhook-book-msg-confirmacao", "da-webhook-book", "da-msg-confirmacao"),
+  edge("da-e-ai-escolha-agenda-book", "da-ai-escolha-horario", "da-agenda-book"),
+  edge("da-e-agenda-book-alerta-lucas", "da-agenda-book", "da-alerta-lucas"),
+  edge("da-e-alerta-lucas-msg-confirmacao", "da-alerta-lucas", "da-msg-confirmacao"),
 ];
 
 /**

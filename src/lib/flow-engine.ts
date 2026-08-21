@@ -28,11 +28,15 @@ import type {
   StaticMessageData,
   ConditionData,
   WebhookData,
+  GoogleCalendarSlotsData,
+  GoogleCalendarBookData,
 } from "@/components/flows/nodes/types";
 import { getAlertRecipients } from "@/components/flows/nodes/types";
 import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/encryption";
 import { sendWhatsappMessage, sendWhatsappButtons, sendWhatsappList } from "@/lib/whatsapp-service";
+import { findAvailableSlots, createCalendarEvent, appendSheetRow } from "@/lib/google-api";
+import { emojiNumber } from "@/lib/templates/flow-helpers";
 
 export type FlowContext = {
   /** ID do usuário (tenant) dono do fluxo — usado para saber qual sessão do WhatsApp usar */
@@ -323,6 +327,103 @@ async function executeWebhookNode(data: WebhookData, context: FlowContext): Prom
 }
 
 /**
+ * Executa o bloco "Agenda: Buscar Horários" — consulta a agenda Google
+ * conectada (ver `GoogleIntegration`) e grava os horários livres encontrados
+ * como variáveis do fluxo: `slots_message` (texto pronto, numerado em
+ * emoji — ex: "1️⃣ 24/08 às 09:00") e `slot_1_iso`/`slot_2_iso`/... (os
+ * mesmos horários em ISO 8601, pro bloco de confirmação usar depois). Também
+ * grava `_slot_duration_minutes` (variável técnica, não pra exibir) — é
+ * assim que o bloco de confirmação sabe a duração certa do evento a criar,
+ * sem precisar repetir essa configuração em dois lugares.
+ */
+async function executeGoogleCalendarSlotsNode(data: GoogleCalendarSlotsData, context: FlowContext): Promise<StepResult> {
+  const result = await findAvailableSlots(context.userId, {
+    daysAhead: data.daysAhead,
+    slotsWanted: data.slotsWanted,
+    slotDurationMinutes: data.slotDurationMinutes,
+    businessHourStart: data.businessHourStart,
+    businessHourEnd: data.businessHourEnd,
+    minLeadHours: data.minLeadHours,
+  });
+
+  if (!result.ok) {
+    console.error("[flow-engine] Falha ao buscar horários na agenda Google:", result.error);
+    return { ok: false, error: result.error };
+  }
+  if (result.slots.length === 0) {
+    return { ok: false, error: "Nenhum horário livre encontrado na janela configurada." };
+  }
+
+  const formatter = new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: result.timezone,
+  });
+
+  context.variables.slots_message = result.slots.map((slot, i) => `${emojiNumber(i + 1)} ${formatter.format(slot.start)}`).join("\n");
+  context.variables._slot_duration_minutes = String(data.slotDurationMinutes);
+  result.slots.forEach((slot, i) => {
+    context.variables[`slot_${i + 1}_iso`] = slot.start.toISOString();
+  });
+
+  return { ok: true, next: "continue" };
+}
+
+/**
+ * Executa o bloco "Agenda: Confirmar Agendamento" — resolve qual horário foi
+ * escolhido (variável `escolha_horario`, tipicamente "1"/"2"/"3", cruzada
+ * com `slot_N_iso` gravado pelo bloco anterior), cria o evento na agenda
+ * Google conectada (com link do Google Meet), e — se `sheetRowTemplate`
+ * estiver preenchido — grava uma linha na planilha configurada. Grava
+ * `meet_link` e `horario_agendado_formatado` como variáveis, pro bloco
+ * seguinte (tipicamente uma mensagem de confirmação) usar.
+ */
+async function executeGoogleCalendarBookNode(data: GoogleCalendarBookData, context: FlowContext): Promise<StepResult> {
+  const choice = context.variables.escolha_horario?.trim();
+  const chosenIso = choice ? context.variables[`slot_${choice}_iso`] : undefined;
+  if (!chosenIso) {
+    return { ok: false, error: "Nenhum horário válido escolhido (variável escolha_horario ausente ou inválida)." };
+  }
+
+  const start = new Date(chosenIso);
+  const durationMinutes = Number(context.variables._slot_duration_minutes) || 60;
+  const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
+
+  const summary = interpolateVariables(data.eventTitleTemplate, context.variables);
+  const description = interpolateVariables(data.eventDescriptionTemplate, context.variables);
+
+  const eventResult = await createCalendarEvent(context.userId, { summary, description, start, end });
+  if (!eventResult.ok) {
+    console.error("[flow-engine] Falha ao criar evento na agenda Google:", eventResult.error);
+    return { ok: false, error: eventResult.error };
+  }
+
+  context.variables.meet_link = eventResult.meetLink ?? "";
+  context.variables.horario_agendado_formatado = new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: eventResult.timezone,
+  }).format(start);
+
+  if (data.sheetRowTemplate && data.sheetRowTemplate.trim()) {
+    const columns = data.sheetRowTemplate.split("\n").map((line) => interpolateVariables(line, context.variables));
+    const sheetResult = await appendSheetRow(context.userId, { sheet: "leads", values: columns });
+    if (!sheetResult.ok) {
+      // Não trava o fluxo por isso — o agendamento em si já foi feito com
+      // sucesso, perder a linha da planilha é recuperável manualmente e não
+      // deve impedir o contato de receber a confirmação.
+      console.error("[flow-engine] Evento criado, mas falha ao gravar na planilha:", sheetResult.error);
+    }
+  }
+
+  return { ok: true, next: "continue" };
+}
+
+/**
  * Dispatcher central do motor de fluxo. Recebe um node (já no formato salvo
  * em `Flow.nodes`) e o contexto atual da conversa, executa a ação
  * correspondente ao tipo do bloco e devolve como o orquestrador deve
@@ -350,6 +451,12 @@ export async function executeFlowNode(node: FlowNode, context: FlowContext): Pro
 
     case "webhook":
       return executeWebhookNode(node.data, context);
+
+    case "googleCalendarSlots":
+      return executeGoogleCalendarSlotsNode(node.data, context);
+
+    case "googleCalendarBook":
+      return executeGoogleCalendarBookNode(node.data, context);
 
     default:
       return { ok: true, next: "continue" };
