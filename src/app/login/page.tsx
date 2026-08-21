@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { SparkBackground } from "@/components/login/spark-background";
 import { APP_NAME, APP_TAGLINE } from "@/lib/constants";
 
 const initialState: LoginState = {};
@@ -24,8 +25,9 @@ export default function LoginPage() {
   const [state, formAction] = useFormState(loginAction, initialState);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-muted/60 via-background to-primary/5 p-4">
-      <Card className="w-full max-w-sm">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
+      <SparkBackground />
+      <Card className="relative z-10 w-full max-w-sm shadow-[0_0_40px_-8px_hsl(var(--primary)/0.35),0_4px_24px_-8px_rgba(0,0,0,0.7)]">
         <CardHeader className="items-center text-center">
           <Image
             src="/logo-digital-analytics.png"
@@ -33,7 +35,7 @@ export default function LoginPage() {
             width={88}
             height={88}
             priority
-            className="mb-2 drop-shadow-sm"
+            className="mb-2 drop-shadow-[0_0_12px_hsl(var(--gold)/0.4)]"
           />
           <CardTitle className="text-xl">{APP_NAME}</CardTitle>
           <p className="text-sm font-medium text-primary">{APP_TAGLINE}</p>

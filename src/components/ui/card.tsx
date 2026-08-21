@@ -4,7 +4,13 @@ import { cn } from "@/lib/utils";
 export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("rounded-lg border border-border bg-card text-card-foreground shadow-sm", className)}
+      className={cn(
+        // Moldura dourada sutil + sombra mais profunda (a shadow-sm padrão do
+        // Tailwind é quase invisível sobre fundo escuro — precisa de mais
+        // presença pra criar separação visual do plano de fundo).
+        "rounded-lg border border-gold/20 bg-card text-card-foreground shadow-[0_4px_24px_-8px_rgba(0,0,0,0.7)]",
+        className
+      )}
       {...props}
     />
   );

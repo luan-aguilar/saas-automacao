@@ -4,72 +4,43 @@
 
 @layer base {
   :root {
-    /* Identidade visual Digital Analytics — azul profundo (pin da
-       logo) como cor principal, dourado como toque de destaque pontual, e o
-       verde reservado só para estados de sucesso/"Conectado" (antes ele
-       coincidia com a cor principal, sem motivo). Tudo via CSS puro — sem
-       nenhum custo de performance/RAM adicional. */
-    --background: 210 40% 98%;
-    --foreground: 222 47% 11%;
+    /* Identidade visual Digital Analytics v2 — "tecnológico, moderno": fundo
+       quase preto (levemente azulado, não preto puro, pra não ficar chapado),
+       azul vívido como cor principal (mantém a identidade da marca) e
+       dourado como moldura/destaque em cards e contornos de botão. Verde
+       reservado só pra estados de sucesso/"Conectado". Tudo via CSS puro —
+       sem nenhum custo de performance/RAM adicional, sem toggle de tema (o
+       app não tem alternância clara/escura — este é o visual permanente). */
+    --background: 224 45% 5%;
+    --foreground: 210 30% 96%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card: 224 35% 8%;
+    --card-foreground: 210 30% 96%;
 
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
+    --muted: 224 25% 13%;
+    --muted-foreground: 217 15% 65%;
 
-    --primary: 221 83% 45%; /* azul da logo Digital Analytics */
-    --primary-foreground: 0 0% 100%;
+    --primary: 217 91% 60%; /* azul vívido — lê bem sobre fundo escuro */
+    --primary-foreground: 222 47% 7%;
 
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
+    --secondary: 224 28% 15%;
+    --secondary-foreground: 210 30% 96%;
 
-    --accent: 210 40% 94%;
-    --accent-foreground: 222 47% 11%;
+    --accent: 224 28% 16%;
+    --accent-foreground: 210 30% 96%;
 
-    --destructive: 0 72% 51%;
+    --destructive: 0 72% 56%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 158 64% 32%; /* verde — reservado para "Conectado"/sucesso */
-    --success-foreground: 0 0% 100%;
+    --success: 158 64% 45%; /* verde — reservado para "Conectado"/sucesso */
+    --success-foreground: 222 47% 7%;
 
-    --gold: 43 96% 56%; /* dourado da logo — só para toques pontuais de marca */
-    --gold-foreground: 26 40% 15%;
-
-    --border: 213 27% 90%;
-
-    --radius: 0.75rem;
-  }
-
-  .dark {
-    --background: 222 47% 7%;
-    --foreground: 210 40% 98%;
-
-    --card: 222 40% 10%;
-    --card-foreground: 210 40% 98%;
-
-    --muted: 217 33% 16%;
-    --muted-foreground: 215 20% 65%;
-
-    --primary: 217 91% 60%;
-    --primary-foreground: 222 47% 8%;
-
-    --secondary: 217 33% 17%;
-    --secondary-foreground: 210 40% 98%;
-
-    --accent: 217 33% 17%;
-    --accent-foreground: 210 40% 98%;
-
-    --destructive: 0 63% 40%;
-    --destructive-foreground: 0 0% 100%;
-
-    --success: 158 64% 42%;
-    --success-foreground: 222 47% 8%;
-
-    --gold: 43 96% 62%;
+    --gold: 43 96% 58%; /* dourado — molduras de card, contorno de botão, destaques pontuais */
     --gold-foreground: 26 40% 12%;
 
-    --border: 217 33% 19%;
+    --border: 224 20% 18%;
+
+    --radius: 0.75rem;
   }
 }
 
@@ -79,10 +50,52 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Glow ambiente sutil (azul no topo, dourado no canto) — dá profundidade
+       "tech" sem competir com o conteúdo. Fixo pra não repetir feio ao rolar. */
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -10%, hsl(var(--primary) / 0.14), transparent 60%),
+      radial-gradient(ellipse 60% 40% at 100% 100%, hsl(var(--gold) / 0.08), transparent 60%);
+    background-attachment: fixed;
   }
 }
 
 /* React Flow — ajustes básicos de tema */
 .react-flow__attribution {
   display: none;
+}
+
+/* input[type=range] — os estilos nativos do browser vêm sempre em tema claro
+   (trilho branco), então precisa de reset manual pra combinar com o resto. */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  width: 100%;
+  border-radius: 9999px;
+  background: hsl(var(--muted));
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: hsl(var(--primary));
+  box-shadow: 0 0 8px -1px hsl(var(--primary) / 0.7);
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: hsl(var(--muted));
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 9999px;
+  background: hsl(var(--primary));
+  box-shadow: 0 0 8px -1px hsl(var(--primary) / 0.7);
+  cursor: pointer;
 }

@@ -9,12 +9,19 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
   size?: Size;
 }
 
+// Botões "em alto relevo": gradiente sutil (topo mais claro) + contorno na
+// cor da própria variante + brilho por trás no hover, pra dar profundidade
+// 3D sem precisar de nenhuma imagem/asset — só CSS.
 const variantClasses: Record<Variant, string> = {
-  default: "bg-primary text-primary-foreground hover:opacity-90",
-  outline: "border border-border bg-transparent hover:bg-accent",
+  default:
+    "bg-gradient-to-b from-primary to-primary/80 text-primary-foreground border border-primary/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2),0_2px_10px_-2px_hsl(var(--primary)/0.55)] hover:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.25),0_4px_18px_-2px_hsl(var(--primary)/0.75)] hover:brightness-110 active:translate-y-px active:brightness-95",
+  outline:
+    "border border-gold/40 bg-transparent text-foreground shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] hover:border-gold/70 hover:bg-gold/10 hover:shadow-[0_0_14px_-3px_hsl(var(--gold)/0.5)]",
   ghost: "bg-transparent hover:bg-accent",
-  destructive: "bg-destructive text-destructive-foreground hover:opacity-90",
-  secondary: "bg-secondary text-secondary-foreground hover:opacity-80",
+  destructive:
+    "bg-gradient-to-b from-destructive to-destructive/80 text-destructive-foreground border border-destructive/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15),0_2px_10px_-2px_hsl(var(--destructive)/0.5)] hover:brightness-110 active:translate-y-px",
+  secondary:
+    "bg-secondary text-secondary-foreground border border-border hover:bg-accent",
 };
 
 const sizeClasses: Record<Size, string> = {
@@ -30,7 +37,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       <button
         ref={ref}
         className={cn(
-          "inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+          "inline-flex items-center justify-center gap-2 rounded-md font-medium transition-all duration-150 disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
           variantClasses[variant],
           sizeClasses[size],
           className

@@ -426,9 +426,19 @@ function FlowBuilderInner({
             fitView
             proOptions={{ hideAttribution: true }}
           >
-            <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
-            <Controls />
-            <MiniMap pannable zoomable className="!bg-card" />
+            <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="hsl(var(--border))" />
+            <Controls className="[&_button]:!border-border [&_button]:!bg-card [&_button]:!fill-foreground [&_button]:hover:!bg-accent" />
+            <MiniMap
+              pannable
+              zoomable
+              className="!bg-card"
+              style={{ backgroundColor: "hsl(var(--card))" }}
+              maskColor="hsl(var(--background) / 0.75)"
+              nodeColor="hsl(var(--muted))"
+              nodeStrokeColor="hsl(var(--gold))"
+              nodeStrokeWidth={2}
+              nodeBorderRadius={4}
+            />
           </ReactFlow>
         </div>
 
