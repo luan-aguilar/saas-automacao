@@ -1,10 +1,11 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/tenant";
 import { SettingsForm } from "@/components/settings/settings-form";
 
 export default async function SettingsPage() {
   const session = await auth();
-  const config = await prisma.config.findUnique({ where: { userId: session!.user.id } });
+  const config = await prisma.config.findUnique({ where: { userId: getTenantId(session!.user) } });
 
   return (
     <div className="space-y-6 p-4 md:p-6">

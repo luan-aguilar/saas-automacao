@@ -8,10 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { formatPhone } from "@/lib/utils";
-import { Plus, KeyRound, Power, Copy, Check, UsersRound } from "lucide-react";
-import Link from "next/link";
+import { Plus, KeyRound, Power, Copy, Check } from "lucide-react";
 
-type ClientRow = {
+type EmployeeRow = {
   id: string;
   name: string;
   email: string;
@@ -19,11 +18,10 @@ type ClientRow = {
   status: "ACTIVE" | "INACTIVE";
   mustChangePassword: boolean;
   createdAt: string;
-  whatsappConnection: { status: string; phoneNumber: string | null } | null;
 };
 
-export function ClientTable({ initialClients }: { initialClients: ClientRow[] }) {
-  const [clients, setClients] = useState(initialClients);
+export function TeamManager({ initialEmployees }: { initialEmployees: EmployeeRow[] }) {
+  const [employees, setEmployees] = useState(initialEmployees);
   const [showForm, setShowForm] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [formError, setFormError] = useState<string | null>(null);
@@ -33,6 +31,14 @@ export function ClientTable({ initialClients }: { initialClients: ClientRow[] })
   } | null>(null);
   const [copied, setCopied] = useState(false);
 
+  function refreshList() {
+    startTransition(async () => {
+      const listRes = await fetch("/api/team");
+      const listData = await listRes.json();
+      setEmployees(listData.employees);
+    });
+  }
+
   async function handleCreate(formData: FormData) {
     setFormError(null);
     const payload = {
@@ -41,7 +47,7 @@ export function ClientTable({ initialClients }: { initialClients: ClientRow[] })
       phone: String(formData.get("phone") ?? ""),
     };
 
-    const res = await fetch("/api/clients", {
+    const res = await fetch("/api/team", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -49,22 +55,17 @@ export function ClientTable({ initialClients }: { initialClients: ClientRow[] })
     const data = await res.json();
 
     if (!res.ok) {
-      setFormError(data.error ?? "Erro ao criar cliente");
+      setFormError(data.error ?? "Erro ao criar conta de equipe");
       return;
     }
 
     setGeneratedCredentials({ email: payload.email, password: data.temporaryPassword });
     setShowForm(false);
-
-    startTransition(async () => {
-      const listRes = await fetch("/api/clients");
-      const listData = await listRes.json();
-      setClients(listData.clients);
-    });
+    refreshList();
   }
 
   async function handleAction(id: string, action: "ACTIVATE" | "DEACTIVATE" | "RESET_PASSWORD") {
-    const res = await fetch(`/api/clients/${id}`, {
+    const res = await fetch(`/api/team/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action }),
@@ -73,17 +74,13 @@ export function ClientTable({ initialClients }: { initialClients: ClientRow[] })
     if (!res.ok) return;
 
     if (action === "RESET_PASSWORD" && data.temporaryPassword) {
-      const client = clients.find((c) => c.id === id);
-      if (client) {
-        setGeneratedCredentials({ email: client.email, password: data.temporaryPassword });
+      const employee = employees.find((e) => e.id === id);
+      if (employee) {
+        setGeneratedCredentials({ email: employee.email, password: data.temporaryPassword });
       }
     }
 
-    startTransition(async () => {
-      const listRes = await fetch("/api/clients");
-      const listData = await listRes.json();
-      setClients(listData.clients);
-    });
+    refreshList();
   }
 
   function copyCredentials() {
@@ -103,7 +100,7 @@ export function ClientTable({ initialClients }: { initialClients: ClientRow[] })
               <p className="font-medium">Credenciais geradas para {generatedCredentials.email}</p>
               <p className="text-muted-foreground">
                 Senha temporária: <span className="font-mono font-semibold text-foreground">{generatedCredentials.password}</span>
-                {" — "}envie esta mensagem ao cliente via WhatsApp. Ela não será exibida novamente.
+                {" — "}envie esta mensagem para a pessoa via WhatsApp. Ela não será exibida novamente.
               </p>
             </div>
             <div className="flex gap-2">
@@ -122,12 +119,12 @@ export function ClientTable({ initialClients }: { initialClients: ClientRow[] })
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <div>
-            <CardTitle>Clientes</CardTitle>
-            <CardDescription>Gerencie as contas de clientes do robô</CardDescription>
+            <CardTitle>Equipe</CardTitle>
+            <CardDescription>Contas de acesso da sua equipe (ex: recepcionista)</CardDescription>
           </div>
           <Button onClick={() => setShowForm((v) => !v)}>
             <Plus className="h-4 w-4" />
-            Novo cliente
+            Novo membro
           </Button>
         </CardHeader>
 
@@ -139,11 +136,11 @@ export function ClientTable({ initialClients }: { initialClients: ClientRow[] })
             >
               <div className="space-y-1.5">
                 <Label htmlFor="name">Nome</Label>
-                <Input id="name" name="name" placeholder="Nome do cliente" required />
+                <Input id="name" name="name" placeholder="Nome da pessoa" required />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="email">E-mail</Label>
-                <Input id="email" name="email" type="email" placeholder="cliente@empresa.com" required />
+                <Input id="email" name="email" type="email" placeholder="pessoa@empresa.com" required />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="phone">Telefone (WhatsApp)</Label>
@@ -164,57 +161,46 @@ export function ClientTable({ initialClients }: { initialClients: ClientRow[] })
             <table className="w-full text-sm">
               <thead className="border-t border-border bg-muted/40 text-left text-xs uppercase text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-3 font-medium">Cliente</th>
+                  <th className="px-4 py-3 font-medium">Membro</th>
                   <th className="px-4 py-3 font-medium">Telefone</th>
-                  <th className="px-4 py-3 font-medium">WhatsApp</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium text-right">Ações</th>
                 </tr>
               </thead>
               <tbody>
-                {clients.map((client) => (
-                  <tr key={client.id} className="border-t border-border">
+                {employees.map((employee) => (
+                  <tr key={employee.id} className="border-t border-border">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <Avatar name={client.name} />
+                        <Avatar name={employee.name} />
                         <div>
-                          <p className="font-medium">{client.name}</p>
-                          <p className="text-xs text-muted-foreground">{client.email}</p>
+                          <p className="font-medium">{employee.name}</p>
+                          <p className="text-xs text-muted-foreground">{employee.email}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3">{client.phone ? formatPhone(client.phone) : "-"}</td>
+                    <td className="px-4 py-3">{employee.phone ? formatPhone(employee.phone) : "-"}</td>
                     <td className="px-4 py-3">
-                      <Badge variant={client.whatsappConnection?.status === "CONNECTED" ? "success" : "outline"}>
-                        {client.whatsappConnection?.status ?? "DESCONHECIDO"}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant={client.status === "ACTIVE" ? "success" : "destructive"}>
-                        {client.status === "ACTIVE" ? "Ativo" : "Inativo"}
+                      <Badge variant={employee.status === "ACTIVE" ? "success" : "destructive"}>
+                        {employee.status === "ACTIVE" ? "Ativo" : "Inativo"}
                       </Badge>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
-                        <Link href={`/clients/${client.id}`}>
-                          <Button size="sm" variant="outline" title="Ver equipe e histórico de ações">
-                            <UsersRound className="h-3.5 w-3.5" />
-                          </Button>
-                        </Link>
                         <Button
                           size="sm"
                           variant="outline"
                           title="Redefinir senha"
-                          onClick={() => handleAction(client.id, "RESET_PASSWORD")}
+                          onClick={() => handleAction(employee.id, "RESET_PASSWORD")}
                         >
                           <KeyRound className="h-3.5 w-3.5" />
                         </Button>
                         <Button
                           size="sm"
-                          variant={client.status === "ACTIVE" ? "destructive" : "default"}
-                          title={client.status === "ACTIVE" ? "Desativar" : "Ativar"}
+                          variant={employee.status === "ACTIVE" ? "destructive" : "default"}
+                          title={employee.status === "ACTIVE" ? "Desativar" : "Ativar"}
                           onClick={() =>
-                            handleAction(client.id, client.status === "ACTIVE" ? "DEACTIVATE" : "ACTIVATE")
+                            handleAction(employee.id, employee.status === "ACTIVE" ? "DEACTIVATE" : "ACTIVATE")
                           }
                         >
                           <Power className="h-3.5 w-3.5" />
@@ -223,10 +209,10 @@ export function ClientTable({ initialClients }: { initialClients: ClientRow[] })
                     </td>
                   </tr>
                 ))}
-                {clients.length === 0 && (
+                {employees.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                      Nenhum cliente cadastrado ainda.
+                    <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
+                      Nenhum membro da equipe cadastrado ainda.
                     </td>
                   </tr>
                 )}

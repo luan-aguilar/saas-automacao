@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getConnectionState } from "@/lib/evolution-api";
 import { syncConnectionState } from "@/lib/whatsapp-service";
+import { getTenantId } from "@/lib/tenant";
 
 /**
  * GET /api/whatsapp/status — usado pelo frontend em polling (a cada 3s) para
@@ -24,14 +25,15 @@ export async function GET() {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
+  const tenantId = getTenantId(session.user);
   let connection = await prisma.whatsappConnection.findUnique({
-    where: { userId: session.user.id },
+    where: { userId: tenantId },
   });
 
   if (connection?.externalSessionId) {
     try {
       const state = await getConnectionState(connection.externalSessionId);
-      connection = await syncConnectionState(session.user.id, connection, state);
+      connection = await syncConnectionState(tenantId, connection, state);
     } catch (error) {
       // Evolution API instável/indisponível no momento: não derruba a tela,
       // apenas mantemos o último status conhecido no banco.

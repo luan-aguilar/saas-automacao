@@ -41,7 +41,7 @@ export default async function ProfilePage() {
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Tipo de acesso</span>
               <Badge variant={user?.role === "MASTER" ? "default" : "outline"}>
-                {user?.role === "MASTER" ? "MASTER" : "Cliente"}
+                {user?.role === "MASTER" ? "MASTER" : user?.role === "FUNCIONARIO" ? "Funcionário" : "Cliente"}
               </Badge>
             </div>
           </CardContent>

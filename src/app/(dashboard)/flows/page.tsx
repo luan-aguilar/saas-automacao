@@ -1,5 +1,7 @@
+import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/tenant";
 import { FlowBuilder } from "@/components/flows/flow-builder";
 import { getAvailableTemplates } from "@/lib/templates/access";
 import type { Node, Edge } from "@xyflow/react";
@@ -38,9 +40,16 @@ async function getOrCreateDefaultFlow(userId: string) {
 
 export default async function FlowsPage() {
   const session = await auth();
+  // Um FUNCIONARIO não edita o fluxo de automação — o middleware já
+  // redireciona antes de chegar aqui, isso é só defesa em profundidade.
+  if (session!.user.role === "FUNCIONARIO") {
+    redirect("/dashboard");
+  }
+
+  const tenantId = getTenantId(session!.user);
   const [flow, availableTemplates] = await Promise.all([
-    getOrCreateDefaultFlow(session!.user.id),
-    getAvailableTemplates(session!.user.id, session!.user.role),
+    getOrCreateDefaultFlow(tenantId),
+    getAvailableTemplates(tenantId, session!.user.role),
   ]);
 
   return (

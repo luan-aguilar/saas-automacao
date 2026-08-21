@@ -21,6 +21,11 @@ export function Topbar({
             MASTER
           </Badge>
         )}
+        {role === "FUNCIONARIO" && (
+          <Badge variant="outline" className="hidden sm:inline-flex">
+            FUNCIONÁRIO
+          </Badge>
+        )}
       </div>
       <UserNav name={name} email={email} role={role} />
     </header>

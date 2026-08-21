@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/tenant";
 
 const updateSchema = z.object({
   name: z.string().min(1),
@@ -19,11 +20,11 @@ async function assertOwnership(flowId: string, userId: string) {
 // GET /api/flows/:id
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
   const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  if (!session?.user || session.user.role === "FUNCIONARIO") {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
   }
 
-  const flow = await assertOwnership(params.id, session.user.id);
+  const flow = await assertOwnership(params.id, getTenantId(session.user));
   if (!flow) {
     return NextResponse.json({ error: "Fluxo não encontrado" }, { status: 404 });
   }
@@ -34,11 +35,11 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 // PUT /api/flows/:id — salva nodes/edges do construtor visual
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
   const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  if (!session?.user || session.user.role === "FUNCIONARIO") {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
   }
 
-  const existing = await assertOwnership(params.id, session.user.id);
+  const existing = await assertOwnership(params.id, getTenantId(session.user));
   if (!existing) {
     return NextResponse.json({ error: "Fluxo não encontrado" }, { status: 404 });
   }
@@ -66,11 +67,11 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 // DELETE /api/flows/:id
 export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
   const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  if (!session?.user || session.user.role === "FUNCIONARIO") {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
   }
 
-  const existing = await assertOwnership(params.id, session.user.id);
+  const existing = await assertOwnership(params.id, getTenantId(session.user));
   if (!existing) {
     return NextResponse.json({ error: "Fluxo não encontrado" }, { status: 404 });
   }

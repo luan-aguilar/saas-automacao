@@ -1,12 +1,13 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/tenant";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Bot, MessageSquareText, Workflow, Users } from "lucide-react";
 import Link from "next/link";
 
 export default async function DashboardPage() {
   const session = await auth();
-  const userId = session!.user.id;
+  const userId = getTenantId(session!.user);
   const role = session!.user.role;
 
   const [flowsCount, chatsCount, openChatsCount, clientsCount] = await Promise.all([
@@ -16,26 +17,14 @@ export default async function DashboardPage() {
     role === "MASTER" ? prisma.user.count({ where: { role: "CLIENTE" } }) : Promise.resolve(0),
   ]);
 
-  const cards = [
-    {
-      label: "Fluxos criados",
-      value: flowsCount,
-      icon: Workflow,
-      href: "/flows",
-    },
-    {
-      label: "Conversas abertas",
-      value: openChatsCount,
-      icon: MessageSquareText,
-      href: "/chat",
-    },
-    {
-      label: "Total de conversas",
-      value: chatsCount,
-      icon: Bot,
-      href: "/chat",
-    },
-  ];
+  const cards = [];
+  if (role !== "FUNCIONARIO") {
+    cards.push({ label: "Fluxos criados", value: flowsCount, icon: Workflow, href: "/flows" });
+  }
+  cards.push(
+    { label: "Conversas abertas", value: openChatsCount, icon: MessageSquareText, href: "/chat" },
+    { label: "Total de conversas", value: chatsCount, icon: Bot, href: "/chat" }
+  );
 
   if (role === "MASTER") {
     cards.push({ label: "Clientes ativos", value: clientsCount, icon: Users, href: "/clients" });

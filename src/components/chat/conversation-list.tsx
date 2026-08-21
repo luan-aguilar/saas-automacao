@@ -26,7 +26,7 @@ function ConversationRowMenu({
   onDelete,
 }: {
   onClear: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -69,17 +69,19 @@ function ConversationRowMenu({
             <Eraser className="h-3.5 w-3.5" />
             Limpar conversa
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              onDelete();
-            }}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            Excluir conversa
-          </button>
+          {onDelete && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onDelete();
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Excluir conversa
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -101,7 +103,7 @@ export function ConversationList({
   aiGloballyEnabled: boolean;
   onGlobalAiToggle: (enabled: boolean) => void;
   onClearChat: (chatId: string) => void;
-  onDeleteChat: (chatId: string) => void;
+  onDeleteChat?: (chatId: string) => void;
 }) {
   return (
     <div className="flex h-full w-80 shrink-0 flex-col border-r border-border bg-card">
@@ -157,7 +159,7 @@ export function ConversationList({
                   </span>
                   <ConversationRowMenu
                     onClear={() => onClearChat(chat.id)}
-                    onDelete={() => onDeleteChat(chat.id)}
+                    onDelete={onDeleteChat ? () => onDeleteChat(chat.id) : undefined}
                   />
                 </div>
               </div>

@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/tenant";
 
-// GET /api/chats — lista as conversas do usuário logado, mais recentes primeiro
+// GET /api/chats — lista as conversas do tenant do usuário logado (dono ou
+// funcionário), mais recentes primeiro
 export async function GET() {
   const session = await auth();
   if (!session?.user) {
@@ -10,7 +12,7 @@ export async function GET() {
   }
 
   const chats = await prisma.chat.findMany({
-    where: { userId: session.user.id },
+    where: { userId: getTenantId(session.user) },
     orderBy: { lastMessageAt: "desc" },
     select: {
       id: true,

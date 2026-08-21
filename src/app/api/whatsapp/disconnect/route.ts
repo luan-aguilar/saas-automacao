@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { deleteInstance, logoutInstance, instanceNameFor, EvolutionApiError } from "@/lib/evolution-api";
+import { getTenantId } from "@/lib/tenant";
 
 /**
  * Logout + delete na Evolution API, em melhor esforço e EM PARALELO entre si
@@ -57,7 +58,7 @@ export async function POST() {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
-  const userId = session.user.id;
+  const userId = getTenantId(session.user);
   const connection = await prisma.whatsappConnection.findUnique({ where: { userId } });
 
   // Mesmo sem registro local (ou sem `externalSessionId` salvo), recalcula o

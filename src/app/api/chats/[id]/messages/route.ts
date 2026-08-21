@@ -3,6 +3,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { sendWhatsappMessage } from "@/lib/whatsapp-service";
+import { getTenantId } from "@/lib/tenant";
 
 async function assertOwnership(chatId: string, userId: string) {
   const chat = await prisma.chat.findUnique({ where: { id: chatId } });
@@ -17,7 +18,8 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
-  const chat = await assertOwnership(params.id, session.user.id);
+  const tenantId = getTenantId(session.user);
+  const chat = await assertOwnership(params.id, tenantId);
   if (!chat) {
     return NextResponse.json({ error: "Conversa não encontrada" }, { status: 404 });
   }
@@ -42,7 +44,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
-  const chat = await assertOwnership(params.id, session.user.id);
+  const tenantId = getTenantId(session.user);
+  const chat = await assertOwnership(params.id, tenantId);
   if (!chat) {
     return NextResponse.json({ error: "Conversa não encontrada" }, { status: 404 });
   }
@@ -53,7 +56,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({ error: "Mensagem inválida" }, { status: 400 });
   }
 
-  const sendResult = await sendWhatsappMessage(session.user.id, chat.contactPhone, parsed.data.content);
+  const sendResult = await sendWhatsappMessage(tenantId, chat.contactPhone, parsed.data.content);
   if (!sendResult.ok) {
     console.error("[chats/messages] Falha ao enviar mensagem via WhatsApp:", sendResult.error);
   }
@@ -121,7 +124,8 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
-  const chat = await assertOwnership(params.id, session.user.id);
+  const tenantId = getTenantId(session.user);
+  const chat = await assertOwnership(params.id, tenantId);
   if (!chat) {
     return NextResponse.json({ error: "Conversa não encontrada" }, { status: 404 });
   }

@@ -21,6 +21,11 @@ datasource db {
 enum Role {
   MASTER
   CLIENTE
+  // Conta de equipe (ex: recepcionista) criada pelo próprio dono do tenant
+  // (um CLIENTE) — ver `User.tenantOwnerId`. Enxerga e opera os mesmos dados
+  // do dono (chats, funil), mas sem acesso ao Construtor de Fluxos, sem
+  // poder excluir conversas, e com todas as ações registradas em `AuditLog`.
+  FUNCIONARIO
 }
 
 enum UserStatus {
@@ -94,10 +99,18 @@ model User {
   // Indica se o usuário ainda está usando a senha temporária gerada pelo MASTER
   mustChangePassword Boolean @default(true)
 
-  // Quem (MASTER) criou esta conta de cliente
+  // Quem (MASTER, ou o dono do tenant no caso de um FUNCIONARIO) criou esta conta
   createdById String?
   createdBy   User?   @relation("UserCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   createdUsers User[] @relation("UserCreatedBy")
+
+  // Preenchido somente para role FUNCIONARIO: aponta pro CLIENTE dono do
+  // tenant cujos dados (chats, fluxos, config, conexão WhatsApp) este
+  // funcionário deve enxergar/operar — ver `src/lib/tenant.ts`. Nulo para
+  // MASTER e CLIENTE (donos de tenant usam o próprio id como escopo).
+  tenantOwnerId String?
+  tenantOwner   User?   @relation("TenantEmployees", fields: [tenantOwnerId], references: [id], onDelete: Cascade)
+  employees     User[]  @relation("TenantEmployees")
 
   config             Config?
   whatsappConnection WhatsappConnection?
@@ -118,6 +131,7 @@ model User {
 
   @@index([role])
   @@index([status])
+  @@index([tenantOwnerId])
 }
 
 // ---------------------------------------------------------------------------

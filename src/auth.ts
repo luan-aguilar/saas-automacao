@@ -63,6 +63,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: user.email,
           role: user.role,
           mustChangePassword: user.mustChangePassword,
+          tenantOwnerId: user.tenantOwnerId,
         };
       },
     }),

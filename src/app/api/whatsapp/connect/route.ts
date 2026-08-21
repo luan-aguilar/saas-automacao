@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { createInstance, deleteInstance, instanceNameFor, setWebhook, type EvolutionQrResult } from "@/lib/evolution-api";
+import { getTenantId } from "@/lib/tenant";
 
 /** URL pública de produção — último fallback antes de recorrer à origem da própria requisição. */
 const FALLBACK_PUBLIC_URL = "https://saas-automacao-eight.vercel.app";
@@ -74,7 +75,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
-  const userId = session.user.id;
+  const userId = getTenantId(session.user);
   const baseInstanceName = instanceNameFor(userId);
   const webhookUrl = webhookUrlFor(request.nextUrl.origin);
 

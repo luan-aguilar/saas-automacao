@@ -1,16 +1,19 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/tenant";
 
-// GET /api/flows — lista os fluxos do usuário logado
+// GET /api/flows — lista os fluxos do tenant do usuário logado. Um
+// FUNCIONARIO não edita fluxos (ver middleware/authConfig), mas a checagem
+// aqui também fica em profundidade, caso a rota seja chamada direto.
 export async function GET() {
   const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  if (!session?.user || session.user.role === "FUNCIONARIO") {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
   }
 
   const flows = await prisma.flow.findMany({
-    where: { userId: session.user.id },
+    where: { userId: getTenantId(session.user) },
     orderBy: { updatedAt: "desc" },
     select: { id: true, name: true, isActive: true, updatedAt: true },
   });
@@ -21,8 +24,8 @@ export async function GET() {
 // POST /api/flows — cria um novo fluxo em branco
 export async function POST(request: Request) {
   const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  if (!session?.user || session.user.role === "FUNCIONARIO") {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
   }
 
   const body = await request.json().catch(() => ({}));
@@ -30,7 +33,7 @@ export async function POST(request: Request) {
 
   const flow = await prisma.flow.create({
     data: {
-      userId: session.user.id,
+      userId: getTenantId(session.user),
       name,
       nodes: [
         {

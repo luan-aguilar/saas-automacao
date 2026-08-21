@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/tenant";
 
 const schema = z.object({ aiEnabled: z.boolean() });
 
@@ -12,8 +13,9 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
+  const tenantId = getTenantId(session.user);
   const chat = await prisma.chat.findUnique({ where: { id: params.id } });
-  if (!chat || chat.userId !== session.user.id) {
+  if (!chat || chat.userId !== tenantId) {
     return NextResponse.json({ error: "Conversa não encontrada" }, { status: 404 });
   }
 
@@ -51,6 +53,20 @@ export async function POST(request: Request, { params }: { params: { id: string 
         : "IA pausada — atendimento humano assumiu esta conversa.",
     },
   });
+
+  // Só registramos no log quando a ação vem de um FUNCIONARIO — é a
+  // transparência que interessa ao dono do tenant (ver a movimentação de
+  // leads da equipe dele), não cada clique do próprio dono no toggle.
+  if (session.user.role === "FUNCIONARIO") {
+    await prisma.auditLog.create({
+      data: {
+        userId: session.user.id,
+        action: parsed.data.aiEnabled ? "CHAT_AI_REACTIVATED" : "CHAT_AI_TAKEOVER",
+        target: params.id,
+        metadata: { contactName: chat.contactName, contactPhone: chat.contactPhone },
+      },
+    });
+  }
 
   return NextResponse.json({ chat: updated });
 }

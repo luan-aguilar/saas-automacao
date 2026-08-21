@@ -1,13 +1,15 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/tenant";
 import { getAvailableTemplates } from "@/lib/templates/access";
 import { PipelineBoard } from "@/components/pipeline/pipeline-board";
 import { Kanban } from "lucide-react";
 
 export default async function PipelinePage() {
   const session = await auth();
+  const tenantId = getTenantId(session!.user);
 
-  const templates = await getAvailableTemplates(session!.user.id, session!.user.role);
+  const templates = await getAvailableTemplates(tenantId, session!.user.role);
   const pipelineTemplates = templates
     .filter((t) => t.pipelineColumns && t.pipelineColumns.length > 0)
     .map((t) => ({ key: t.key, name: t.name, columns: t.pipelineColumns! }));
@@ -30,7 +32,7 @@ export default async function PipelinePage() {
   }
 
   const chats = await prisma.chat.findMany({
-    where: { userId: session!.user.id },
+    where: { userId: tenantId },
     orderBy: { lastMessageAt: "desc" },
     select: {
       id: true,

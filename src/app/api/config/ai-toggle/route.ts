@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/tenant";
 
 const schema = z.object({ enabled: z.boolean() });
 
@@ -19,9 +20,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Payload inválido" }, { status: 400 });
   }
 
+  const tenantId = getTenantId(session.user);
   await prisma.config.upsert({
-    where: { userId: session.user.id },
-    create: { userId: session.user.id, aiGloballyEnabled: parsed.data.enabled },
+    where: { userId: tenantId },
+    create: { userId: tenantId, aiGloballyEnabled: parsed.data.enabled },
     update: { aiGloballyEnabled: parsed.data.enabled },
   });
 

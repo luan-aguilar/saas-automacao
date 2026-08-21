@@ -32,6 +32,18 @@ export const authConfig = {
         return Response.redirect(new URL("/dashboard", request.nextUrl));
       }
 
+      // Funcionário (conta de equipe criada pelo dono do tenant) não edita o
+      // fluxo de automação — só o dono decide como o robô conversa.
+      if (pathname.startsWith("/flows") && auth.user.role === "FUNCIONARIO") {
+        return Response.redirect(new URL("/dashboard", request.nextUrl));
+      }
+
+      // "Minha Equipe" é só do dono do tenant (CLIENTE) — MASTER audita pelo
+      // detalhe do cliente em /clients, e um FUNCIONARIO não gerencia outros.
+      if (pathname.startsWith("/team") && auth.user.role !== "CLIENTE") {
+        return Response.redirect(new URL("/dashboard", request.nextUrl));
+      }
+
       return true;
     },
     jwt({ token, user }) {
@@ -39,6 +51,7 @@ export const authConfig = {
         token.id = user.id;
         token.role = user.role;
         token.mustChangePassword = user.mustChangePassword;
+        token.tenantOwnerId = user.tenantOwnerId;
       }
       return token;
     },
@@ -53,6 +66,7 @@ export const authConfig = {
         session.user.id = token.id as string;
         session.user.role = token.role as Role;
         session.user.mustChangePassword = token.mustChangePassword as boolean;
+        session.user.tenantOwnerId = token.tenantOwnerId as string | null;
       }
       return session;
     },

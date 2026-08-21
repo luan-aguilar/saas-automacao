@@ -1,11 +1,12 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/tenant";
 import { QrDisplay } from "@/components/whatsapp/qr-display";
 
 export default async function WhatsappPage() {
   const session = await auth();
   const connection = await prisma.whatsappConnection.findUnique({
-    where: { userId: session!.user.id },
+    where: { userId: getTenantId(session!.user) },
   });
 
   return (

@@ -13,10 +13,12 @@ export function ChatView({
   initialChats,
   initialAiGloballyEnabled,
   initialWhatsappStatus,
+  canDeleteChat = true,
 }: {
   initialChats: ChatSummary[];
   initialAiGloballyEnabled: boolean;
   initialWhatsappStatus: WhatsappStatus;
+  canDeleteChat?: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -133,7 +135,7 @@ export function ChatView({
           aiGloballyEnabled={aiGloballyEnabled}
           onGlobalAiToggle={handleGlobalAiToggle}
           onClearChat={handleClearChat}
-          onDeleteChat={handleDeleteChat}
+          onDeleteChat={canDeleteChat ? handleDeleteChat : undefined}
         />
         {selectedChat ? (
           <ChatPanel

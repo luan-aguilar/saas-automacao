@@ -5,7 +5,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { APP_NAME } from "@/lib/constants";
-import { LayoutDashboard, Workflow, Settings, QrCode, MessageSquareText, Users, UserCircle, Sparkles, Kanban } from "lucide-react";
+import { LayoutDashboard, Workflow, Settings, QrCode, MessageSquareText, Users, UserCircle, Sparkles, Kanban, UsersRound } from "lucide-react";
 import type { Role } from "@prisma/client";
 
 interface NavItem {
@@ -15,15 +15,20 @@ interface NavItem {
   masterOnly?: boolean;
   /** Só aparece se o tenant tiver acesso a um template com essa funcionalidade — ver `hasPipeline`. */
   requiresPipeline?: boolean;
+  /** Um FUNCIONARIO (conta de equipe) não vê este item — ver `Role`. */
+  hiddenForFuncionario?: boolean;
+  /** Só aparece para o dono do tenant (CLIENTE) — gestão da própria equipe. */
+  ownerOnly?: boolean;
 }
 
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "Visão Geral", icon: LayoutDashboard },
-  { href: "/flows", label: "Construtor de Fluxos", icon: Workflow },
+  { href: "/flows", label: "Construtor de Fluxos", icon: Workflow, hiddenForFuncionario: true },
   { href: "/chat", label: "Atendimento", icon: MessageSquareText },
   { href: "/pipeline", label: "Funil de Atendimento", icon: Kanban, requiresPipeline: true },
   { href: "/whatsapp", label: "Conexão WhatsApp", icon: QrCode },
   { href: "/settings", label: "Configurações", icon: Settings },
+  { href: "/team", label: "Minha Equipe", icon: UsersRound, ownerOnly: true },
   { href: "/clients", label: "Clientes", icon: Users, masterOnly: true },
   { href: "/templates", label: "Templates", icon: Sparkles, masterOnly: true },
   { href: "/profile", label: "Meu Perfil", icon: UserCircle },
@@ -42,6 +47,8 @@ export function Sidebar({ role, hasPipeline }: { role: Role; hasPipeline: boolea
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {navItems
           .filter((item) => !item.masterOnly || role === "MASTER")
+          .filter((item) => !item.hiddenForFuncionario || role !== "FUNCIONARIO")
+          .filter((item) => !item.ownerOnly || role === "CLIENTE")
           .filter((item) => !item.requiresPipeline || hasPipeline)
           .map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -68,6 +75,13 @@ export function Sidebar({ role, hasPipeline }: { role: Role; hasPipeline: boolea
         <div className="border-t border-border p-3">
           <span className="block rounded-md bg-accent px-3 py-2 text-xs font-medium text-muted-foreground">
             Modo Administrador (MASTER)
+          </span>
+        </div>
+      )}
+      {role === "FUNCIONARIO" && (
+        <div className="border-t border-border p-3">
+          <span className="block rounded-md bg-accent px-3 py-2 text-xs font-medium text-muted-foreground">
+            Modo Funcionário
           </span>
         </div>
       )}

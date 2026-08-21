@@ -3,6 +3,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { encrypt, maskKey } from "@/lib/encryption";
+import { getTenantId } from "@/lib/tenant";
 
 const configSchema = z.object({
   openaiApiKey: z.string().optional(), // vazio = manter a key atual
@@ -19,7 +20,7 @@ export async function GET() {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
-  const config = await prisma.config.findUnique({ where: { userId: session.user.id } });
+  const config = await prisma.config.findUnique({ where: { userId: getTenantId(session.user) } });
 
   return NextResponse.json({
     config: config
@@ -63,8 +64,8 @@ export async function POST(request: Request) {
   }
 
   await prisma.config.upsert({
-    where: { userId: session.user.id },
-    create: { userId: session.user.id, ...data },
+    where: { userId: getTenantId(session.user) },
+    create: { userId: getTenantId(session.user), ...data },
     update: data,
   });
 
