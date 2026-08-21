@@ -6,6 +6,7 @@ import { ConversationList, type ChatSummary } from "./conversation-list";
 import { ChatPanel } from "./chat-panel";
 import { Button } from "@/components/ui/button";
 import { MessageSquareText, QrCode } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type WhatsappStatus = "DISCONNECTED" | "CONNECTING" | "QR_PENDING" | "CONNECTED" | "ERROR";
 
@@ -128,28 +129,35 @@ export function ChatView({
   return (
     <div className="relative flex h-full">
       <div className={isDisconnected ? "pointer-events-none flex h-full flex-1 blur-sm select-none" : "flex h-full flex-1"}>
-        <ConversationList
-          chats={chats}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-          aiGloballyEnabled={aiGloballyEnabled}
-          onGlobalAiToggle={handleGlobalAiToggle}
-          onClearChat={handleClearChat}
-          onDeleteChat={canDeleteChat ? handleDeleteChat : undefined}
-        />
-        {selectedChat ? (
-          <ChatPanel
-            chat={selectedChat}
-            onAiToggle={handleAiToggle}
-            onLocalAiStateSync={syncLocalAiState}
-            reloadSignal={reloadSignal}
+        {/* No mobile só um painel fica visível por vez: lista OU conversa —
+            lado a lado (como no desktop) não cabe numa tela pequena. */}
+        <div className={cn("h-full", selectedId ? "hidden md:block" : "block")}>
+          <ConversationList
+            chats={chats}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            aiGloballyEnabled={aiGloballyEnabled}
+            onGlobalAiToggle={handleGlobalAiToggle}
+            onClearChat={handleClearChat}
+            onDeleteChat={canDeleteChat ? handleDeleteChat : undefined}
           />
-        ) : (
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
-            <MessageSquareText className="h-10 w-10" />
-            <p className="text-sm">Selecione uma conversa para começar</p>
-          </div>
-        )}
+        </div>
+        <div className={cn("h-full flex-1", selectedId ? "flex" : "hidden md:flex")}>
+          {selectedChat ? (
+            <ChatPanel
+              chat={selectedChat}
+              onAiToggle={handleAiToggle}
+              onLocalAiStateSync={syncLocalAiState}
+              reloadSignal={reloadSignal}
+              onBack={() => setSelectedId(null)}
+            />
+          ) : (
+            <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
+              <MessageSquareText className="h-10 w-10" />
+              <p className="text-sm">Selecione uma conversa para começar</p>
+            </div>
+          )}
+        </div>
       </div>
 
       {isDisconnected && (

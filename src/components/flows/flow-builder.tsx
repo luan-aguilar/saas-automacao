@@ -31,7 +31,7 @@ import { AlertNotificationNodeComponent } from "./nodes/alert-notification-node"
 import { getTemplateDefinition } from "@/lib/templates/registry";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Save, Play, Pause, Undo2, Redo2, AlertTriangle, Sparkles } from "lucide-react";
+import { Save, Play, Pause, Undo2, Redo2, AlertTriangle, Sparkles, Blocks } from "lucide-react";
 
 const nodeTypes: NodeTypes = {
   trigger: TriggerNodeComponent,
@@ -144,6 +144,8 @@ function FlowBuilderInner({
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Só usado no mobile — no desktop o painel de blocos fica sempre visível.
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
@@ -271,6 +273,29 @@ function FlowBuilderInner({
     event.dataTransfer.dropEffect = "move";
   }, []);
 
+  // Fallback pra quem toca no bloco em vez de arrastar (essencial no
+  // celular, onde o drag-and-drop nativo do painel não funciona) — adiciona
+  // o node no centro da área visível do canvas.
+  const addNode = useCallback(
+    (type: string) => {
+      const rect = wrapperRef.current?.getBoundingClientRect();
+      const center = rect
+        ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+        : { x: 300, y: 300 };
+      const position = screenToFlowPosition(center);
+
+      const newNode: Node = {
+        id: generateId(),
+        type,
+        position,
+        data: defaultDataFor(type),
+      };
+
+      setNodes((nds) => nds.concat(newNode));
+    },
+    [screenToFlowPosition, setNodes]
+  );
+
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
 
   function updateNodeData(id: string, data: Record<string, unknown>) {
@@ -335,12 +360,16 @@ function FlowBuilderInner({
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-col gap-2 border-b border-border bg-card px-4 py-2">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" className="md:hidden" onClick={() => setPaletteOpen(true)}>
+              <Blocks className="h-3.5 w-3.5" />
+              Blocos
+            </Button>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="max-w-xs font-medium"
+              className="max-w-[9rem] font-medium sm:max-w-xs"
             />
             <Button
               variant="ghost"
@@ -361,7 +390,7 @@ function FlowBuilderInner({
               <Redo2 className="h-4 w-4" />
             </Button>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {savedAt && (
               <span className="text-xs text-muted-foreground">
                 Salvo às {savedAt.toLocaleTimeString("pt-BR")}
@@ -406,7 +435,7 @@ function FlowBuilderInner({
       </div>
 
       <div className="flex min-h-0 flex-1">
-        <NodePanel />
+        <NodePanel onAddNode={addNode} open={paletteOpen} onClose={() => setPaletteOpen(false)} />
 
         <div className="min-w-0 flex-1" ref={wrapperRef}>
           <ReactFlow

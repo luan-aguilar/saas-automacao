@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { formatPhone, cn } from "@/lib/utils";
-import { Send, Bot, ListChecks, Trash2, X } from "lucide-react";
+import { Send, Bot, ListChecks, Trash2, X, ArrowLeft } from "lucide-react";
 import type { ChatSummary } from "./conversation-list";
 
 type Message = {
@@ -29,12 +29,15 @@ export function ChatPanel({
   onAiToggle,
   onLocalAiStateSync,
   reloadSignal,
+  onBack,
 }: {
   chat: ChatSummary;
   onAiToggle: (chatId: string, aiEnabled: boolean) => void;
   onLocalAiStateSync: (chatId: string, aiEnabled: boolean) => void;
   /** Incrementado pelo componente pai para forçar um recarregamento imediato (ex: após limpar a conversa pelo menu lateral). */
   reloadSignal?: number;
+  /** Só usado no mobile — volta pra lista de conversas (lá, a lista fica escondida enquanto uma conversa está aberta). */
+  onBack?: () => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
@@ -143,6 +146,16 @@ export function ChatPanel({
     <div className="flex h-full min-w-0 flex-1 flex-col">
       <div className="flex items-center justify-between border-b border-border bg-card px-4 py-3">
         <div className="flex items-center gap-3">
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="-ml-1 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
+              title="Voltar para conversas"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          )}
           <Avatar name={chat.contactName} src={chat.contactAvatarUrl} />
           <div>
             <p className="font-medium">{chat.contactName}</p>

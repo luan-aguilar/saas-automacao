@@ -1,20 +1,25 @@
 import { UserNav } from "./user-nav";
 import { Badge } from "@/components/ui/badge";
+import { MobileNav } from "./mobile-nav";
+import type { Role } from "@prisma/client";
 
 export function Topbar({
   title,
   name,
   email,
   role,
+  hasPipeline,
 }: {
   title: string;
   name: string;
   email: string;
-  role: string;
+  role: Role;
+  hasPipeline: boolean;
 }) {
   return (
     <header className="flex h-14 items-center justify-between border-b border-border bg-card px-4 md:px-6">
       <div className="flex items-center gap-2">
+        <MobileNav role={role} hasPipeline={hasPipeline} />
         <h1 className="text-base font-semibold">{title}</h1>
         {role === "MASTER" && (
           <Badge variant="default" className="hidden sm:inline-flex">

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatPhone, cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { MoreVertical, ArrowRight } from "lucide-react";
 
 export type PipelineStage = "PRIMEIRO_ATENDIMENTO" | "CLIENTE_RECORRENTE" | "AGUARDANDO_HUMANO" | "AGENDAMENTO_CONCLUIDO";
 
@@ -25,6 +26,68 @@ export type PipelineColumnDefinition = { key: PipelineStage; label: string; desc
 
 /** Um template do Construtor de Fluxos que também define um funil (ver `TemplateDefinition.pipelineColumns`). */
 export type PipelineTemplate = { key: string; name: string; columns: PipelineColumnDefinition[] };
+
+/**
+ * Menu "mover para" em cada card — arrastar-e-soltar nativo (HTML5
+ * draggable) simplesmente não dispara em telas touch, então sem isso um
+ * operador no celular não teria NENHUMA forma de mover um contato entre as
+ * colunas do funil. Fica disponível em qualquer dispositivo (não só mobile).
+ */
+function MoveCardMenu({
+  columns,
+  currentStage,
+  onMove,
+}: {
+  columns: PipelineColumnDefinition[];
+  currentStage: PipelineStage;
+  onMove: (stage: PipelineStage) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClickOutside(e: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [open]);
+
+  const otherColumns = columns.filter((c) => c.key !== currentStage);
+  if (otherColumns.length === 0) return null;
+
+  return (
+    <div ref={rootRef} className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        title="Mover para outra etapa"
+        onClick={() => setOpen((v) => !v)}
+        className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        <MoreVertical className="h-4 w-4" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-7 z-10 w-48 overflow-hidden rounded-md border border-border bg-card py-1 shadow-md">
+          {otherColumns.map((column) => (
+            <button
+              key={column.key}
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onMove(column.key);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
+            >
+              <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              {column.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function PipelineBoard({
   initialChats,
@@ -170,6 +233,11 @@ export function PipelineBoard({
                         <p className="truncate text-sm font-medium">{chat.contactName}</p>
                         <p className="truncate text-[11px] text-muted-foreground">{formatPhone(chat.contactPhone)}</p>
                       </div>
+                      <MoveCardMenu
+                        columns={columns}
+                        currentStage={chat.pipelineStage}
+                        onMove={(stage) => moveChat(chat.id, stage)}
+                      />
                     </div>
                     {chat.lastMessagePreview && (
                       <p className="line-clamp-2 text-xs text-muted-foreground">{chat.lastMessagePreview}</p>

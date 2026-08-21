@@ -25,7 +25,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <div className="flex h-screen overflow-hidden bg-muted/30">
       <Sidebar role={role} hasPipeline={hasPipeline} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar title="" name={name ?? ""} email={email ?? ""} role={role} />
+        <Topbar title="" name={name ?? ""} email={email ?? ""} role={role} hasPipeline={hasPipeline} />
         <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>

@@ -31,7 +31,7 @@ export function NodeConfigDrawer({
   }
 
   return (
-    <aside className="w-80 shrink-0 overflow-y-auto border-l border-border bg-card p-4">
+    <aside className="fixed inset-0 z-40 overflow-y-auto border-l border-border bg-card p-4 md:static md:z-auto md:w-80 md:shrink-0">
       <div className="mb-4 flex items-center justify-between">
         <p className="text-sm font-semibold uppercase text-muted-foreground">Configurar bloco</p>
         <Button variant="ghost" size="icon" onClick={onClose}>

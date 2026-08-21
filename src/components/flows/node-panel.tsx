@@ -1,7 +1,9 @@
 "use client";
 
-import { Zap, Sparkles, MessageSquare, GitFork, BellRing } from "lucide-react";
+import { Zap, Sparkles, MessageSquare, GitFork, BellRing, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 const paletteItems: {
   type: "trigger" | "aiResponse" | "staticMessage" | "condition" | "alertNotification";
@@ -47,20 +49,52 @@ const paletteItems: {
   },
 ];
 
-export function NodePanel() {
+/**
+ * `open`/`onClose` só importam no mobile — lá o painel vira um overlay em
+ * tela cheia (aberto por um botão na barra de ferramentas), em vez de uma
+ * coluna sempre visível como no desktop, porque não cabem as 3 colunas
+ * (blocos + canvas + config) numa tela pequena.
+ */
+export function NodePanel({
+  onAddNode,
+  open,
+  onClose,
+}: {
+  onAddNode: (nodeType: string) => void;
+  open?: boolean;
+  onClose?: () => void;
+}) {
   function onDragStart(event: React.DragEvent, nodeType: string) {
     event.dataTransfer.setData("application/reactflow", nodeType);
     event.dataTransfer.effectAllowed = "move";
   }
 
+  function handlePick(nodeType: string) {
+    onAddNode(nodeType);
+    onClose?.();
+  }
+
   return (
-    <aside className="w-64 shrink-0 space-y-2 overflow-y-auto border-r border-border bg-card p-3">
-      <p className="px-1 text-xs font-semibold uppercase text-muted-foreground">Blocos disponíveis</p>
+    <aside
+      className={cn(
+        "w-64 shrink-0 space-y-2 overflow-y-auto border-r border-border bg-card p-3",
+        "fixed inset-0 z-40 md:static md:z-auto",
+        open ? "block" : "hidden md:block"
+      )}
+    >
+      <div className="mb-1 flex items-center justify-between md:hidden">
+        <p className="text-xs font-semibold uppercase text-muted-foreground">Blocos disponíveis</p>
+        <Button variant="ghost" size="icon" onClick={onClose}>
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+      <p className="hidden px-1 text-xs font-semibold uppercase text-muted-foreground md:block">Blocos disponíveis</p>
       {paletteItems.map((item) => (
         <div
           key={item.type}
           draggable
           onDragStart={(e) => onDragStart(e, item.type)}
+          onClick={() => handlePick(item.type)}
           className="flex cursor-grab items-start gap-2 rounded-md border border-border p-2.5 transition-colors hover:bg-accent active:cursor-grabbing"
         >
           <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-white ${item.colorClass}`}>
@@ -73,7 +107,7 @@ export function NodePanel() {
         </div>
       ))}
       <p className="px-1 pt-2 text-xs text-muted-foreground">
-        Arraste um bloco para o canvas para adicioná-lo ao fluxo.
+        Toque num bloco para adicioná-lo ao fluxo (ou arraste, no computador).
       </p>
     </aside>
   );
