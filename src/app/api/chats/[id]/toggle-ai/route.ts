@@ -28,13 +28,26 @@ export async function POST(request: Request, { params }: { params: { id: string 
     data: { aiEnabled: parsed.data.aiEnabled },
   });
 
+  // Ao REATIVAR a IA manualmente (operador ligando o toggle de volta), reseta
+  // a sessão do fluxo desse contato — sem isso, a IA voltava "lembrando" de
+  // toda a conversa/testes anteriores (histórico, dados já coletados, node
+  // onde parou), o que é constrangedor quando o contato é retestado do zero
+  // (ex: dono de outro salão testando o robô) e ele responde como se já
+  // conhecesse a pessoa. Igual a um cliente novo: a próxima mensagem dele
+  // aciona o node de trigger e começa o fluxo do absoluto zero.
+  if (parsed.data.aiEnabled) {
+    await prisma.flowSession.deleteMany({
+      where: { userId: chat.userId, contactPhone: chat.contactPhone },
+    });
+  }
+
   await prisma.message.create({
     data: {
       chatId: params.id,
       direction: "OUTBOUND",
       sender: "SYSTEM",
       content: parsed.data.aiEnabled
-        ? "IA reativada para esta conversa."
+        ? "IA reativada para esta conversa — atendimento reiniciado do zero."
         : "IA pausada — atendimento humano assumiu esta conversa.",
     },
   });
