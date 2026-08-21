@@ -124,18 +124,26 @@ export function getAlertRecipients(data: AlertNotificationData): string[] {
   return list.map((p) => p.trim()).filter((p) => p.length > 0);
 }
 
+export type WebhookData = {
+  label: string;
+  /** URL a chamar via POST (ex: um webhook do n8n/Zapier/Make) — com DDI/DDD não se aplica aqui, é uma URL. */
+  url: string;
+};
+
 export type TriggerNode = Node<TriggerData, "trigger">;
 export type AiResponseNode = Node<AiResponseData, "aiResponse">;
 export type StaticMessageNode = Node<StaticMessageData, "staticMessage">;
 export type ConditionNode = Node<ConditionData, "condition">;
 export type AlertNotificationNode = Node<AlertNotificationData, "alertNotification">;
+export type WebhookNode = Node<WebhookData, "webhook">;
 
 export type FlowNode =
   | TriggerNode
   | AiResponseNode
   | StaticMessageNode
   | ConditionNode
-  | AlertNotificationNode;
+  | AlertNotificationNode
+  | WebhookNode;
 
 /** Extrai os nomes de variáveis {{assim}} usados em um texto (sem duplicatas). */
 export function extractVariableNames(text: string): string[] {

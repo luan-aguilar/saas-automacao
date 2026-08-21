@@ -28,6 +28,7 @@ import { AiResponseNodeComponent } from "./nodes/ai-response-node";
 import { StaticMessageNodeComponent } from "./nodes/static-message-node";
 import { ConditionNodeComponent } from "./nodes/condition-node";
 import { AlertNotificationNodeComponent } from "./nodes/alert-notification-node";
+import { WebhookNodeComponent } from "./nodes/webhook-node";
 import { getTemplateDefinition } from "@/lib/templates/registry";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +40,7 @@ const nodeTypes: NodeTypes = {
   staticMessage: StaticMessageNodeComponent,
   condition: ConditionNodeComponent,
   alertNotification: AlertNotificationNodeComponent,
+  webhook: WebhookNodeComponent,
 };
 
 const edgeTypes: EdgeTypes = {
@@ -70,6 +72,8 @@ function defaultDataFor(type: string): Record<string, unknown> {
         recipientPhones: [""],
         message: "Novo agendamento! Nome: {{nome}}, Data: {{data}}, Serviço: {{servico}}",
       };
+    case "webhook":
+      return { label: "Webhook / Automação Externa", url: "" };
     default:
       return { label: "Bloco" };
   }

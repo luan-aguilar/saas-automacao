@@ -96,6 +96,7 @@
  */
 
 import type { Node, Edge } from "@xyflow/react";
+import { conditionNode, plainTextNode, edge, emojiNumber } from "./flow-helpers";
 
 export const BEAUTY_SALON_TEMPLATE_NAME = "Salão de Beleza / Estética — Home Concept";
 
@@ -178,21 +179,6 @@ const SUB_SERVICES: Record<"cabelo" | "unhas" | "cilios" | "sobrancelhas", strin
   ],
   sobrancelhas: ["Brow Lamination", "Dermaplaning", "Design com Henna", "Depilação de Buço", "Hydra Gloss", "Lash Lifting", "Natural Design"],
 };
-
-const KEYCAP_DIGITS = ["0️⃣", "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
-
-/**
- * Converte um número inteiro positivo numa sequência de emojis de "keycap"
- * (ex: 7 -> "7️⃣", 23 -> "2️⃣3️⃣"). Não existe um emoji nativo para números de
- * dois dígitos, então a convenção usada (a mesma que a IA recebe instrução de
- * seguir no prompt) é encadear um emoji por dígito, sem espaço entre eles.
- */
-function emojiNumber(n: number): string {
-  return String(n)
-    .split("")
-    .map((digit) => KEYCAP_DIGITS[Number(digit)])
-    .join("");
-}
 
 /**
  * Monta a mensagem de texto puro e NUMERADO (com emojis de número, ex: 1️⃣ 2️⃣
@@ -433,22 +419,6 @@ Regras:
 
 Não se preocupe com \`servico_categoria\` nem \`servico_subtipo\` — essas duas já são preenchidas automaticamente pelo sistema a partir do serviço que a cliente escolheu antes de chegar até você, você não precisa (nem consegue) defini-las.`;
 
-function conditionNode(
-  id: string,
-  position: { x: number; y: number },
-  label: string,
-  value: string,
-  operator: "CONTAINS" | "EQUALS" = "CONTAINS",
-  variable = "ultima_resposta"
-): Node {
-  return {
-    id,
-    type: "condition",
-    position,
-    data: { label, variable, operator, value },
-  };
-}
-
 /**
  * Monta uma cadeia de condições em OR (uma checagem por vez, em sequência —
  * nunca "por eliminação"): se alguma bater, vai direto para `yesTarget`; se
@@ -477,35 +447,6 @@ function orConditionChain(
     edges.push(edge(`${id}-no`, id, nextId, "no"));
   });
   return { nodes, edges, firstId: `${idPrefix}1` };
-}
-
-/** Node de mensagem estática em texto puro (sem botões/lista). */
-function plainTextNode(
-  id: string,
-  position: { x: number; y: number },
-  label: string,
-  message: string,
-  waitForReply = false,
-  disablesAiForChat = false,
-  extra?: { setVariables?: Record<string, string>; captureLastReplyInto?: string }
-): Node {
-  return {
-    id,
-    type: "staticMessage",
-    position,
-    data: { label, message, buttons: [], waitForReply, disablesAiForChat, ...extra },
-  };
-}
-
-function edge(id: string, source: string, target: string, sourceHandle?: "yes" | "no"): Edge {
-  return {
-    id,
-    source,
-    target,
-    ...(sourceHandle ? { sourceHandle } : {}),
-    type: "deletable",
-    animated: true,
-  };
 }
 
 const MENU_MESSAGE =

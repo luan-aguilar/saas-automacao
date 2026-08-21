@@ -1,12 +1,12 @@
 "use client";
 
-import { Zap, Sparkles, MessageSquare, GitFork, BellRing, X } from "lucide-react";
+import { Zap, Sparkles, MessageSquare, GitFork, BellRing, Webhook, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const paletteItems: {
-  type: "trigger" | "aiResponse" | "staticMessage" | "condition" | "alertNotification";
+  type: "trigger" | "aiResponse" | "staticMessage" | "condition" | "alertNotification" | "webhook";
   label: string;
   description: string;
   icon: LucideIcon;
@@ -46,6 +46,13 @@ const paletteItems: {
     description: "Avisa um atendente via WhatsApp com os dados do lead",
     icon: BellRing,
     colorClass: "bg-rose-600",
+  },
+  {
+    type: "webhook",
+    label: "Webhook / Automação Externa",
+    description: "Envia os dados coletados pra outra ferramenta (ex: n8n, Zapier)",
+    icon: Webhook,
+    colorClass: "bg-teal-600",
   },
 ];
 

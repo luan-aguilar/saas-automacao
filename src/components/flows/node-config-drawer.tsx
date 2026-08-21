@@ -259,6 +259,25 @@ export function NodeConfigDrawer({
           </>
         )}
 
+        {node.type === "webhook" && (
+          <>
+            <div className="space-y-1.5">
+              <Label>URL do webhook</Label>
+              <Input
+                value={data.url ?? ""}
+                onChange={(e) => update({ url: e.target.value })}
+                placeholder="https://sua-automacao.exemplo.com/webhook/..."
+              />
+              <p className="text-xs text-muted-foreground">
+                Ao chegar neste bloco, o robô envia um POST com todas as variáveis já coletadas na
+                conversa (mais o telefone do contato) em formato JSON para esta URL. Se a automação
+                externa responder com um JSON, cada campo da resposta vira uma nova variável do
+                fluxo — disponível nos blocos seguintes como <code>{"{{nome_do_campo}}"}</code>.
+              </p>
+            </div>
+          </>
+        )}
+
         {node.type === "condition" && (
           <>
             <div className="space-y-1.5">

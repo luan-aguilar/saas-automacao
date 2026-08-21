@@ -27,6 +27,7 @@ import type {
   AiResponseData,
   StaticMessageData,
   ConditionData,
+  WebhookData,
 } from "@/components/flows/nodes/types";
 import { getAlertRecipients } from "@/components/flows/nodes/types";
 import { prisma } from "@/lib/prisma";
@@ -266,6 +267,62 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
 }
 
 /**
+ * Executa o bloco "Webhook / Automação Externa": envia (POST, JSON) todas as
+ * variáveis já coletadas no fluxo até aqui — mais `contactPhone`/
+ * `contactName` — para uma URL externa (ex: um webhook do n8n/Zapier/Make).
+ * Se a resposta vier em JSON, cada campo de nível superior (string/number/
+ * boolean) é gravado como uma nova variável do fluxo, usando o mesmo nome do
+ * campo — permite que a automação externa "devolva" dados pro fluxo
+ * continuar (ex: horários disponíveis de agenda) sem precisar de um node
+ * dedicado por integração. Só falha (trava o contato em "aguardando
+ * humano") se a chamada não completar OU responder um status de erro — uma
+ * automação externa fora do ar é justamente o tipo de falha que precisa de
+ * atenção humana, ao contrário de um número de WhatsApp inválido no bloco de
+ * alerta (esse tem fallback próprio, ver `executeAlertNotificationNode`).
+ */
+async function executeWebhookNode(data: WebhookData, context: FlowContext): Promise<StepResult> {
+  if (!data.url) {
+    console.warn("[flow-engine] Bloco de Webhook sem URL configurada — ignorado.");
+    return { ok: false, error: "URL do webhook não configurada." };
+  }
+
+  const payload = {
+    ...context.variables,
+    contactPhone: context.contactPhone,
+  };
+
+  let response: Response;
+  try {
+    response = await fetch(data.url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Erro desconhecido ao chamar o webhook";
+    console.error("[flow-engine] Falha ao chamar webhook:", message);
+    return { ok: false, error: message };
+  }
+
+  if (!response.ok) {
+    console.error(`[flow-engine] Webhook respondeu com status ${response.status}`);
+    return { ok: false, error: `Webhook respondeu com status ${response.status}` };
+  }
+
+  const body = await response.json().catch(() => null);
+  if (body && typeof body === "object") {
+    for (const [key, value] of Object.entries(body as Record<string, unknown>)) {
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+        context.variables[key] = String(value);
+      }
+    }
+  }
+
+  return { ok: true, next: "continue" };
+}
+
+/**
  * Dispatcher central do motor de fluxo. Recebe um node (já no formato salvo
  * em `Flow.nodes`) e o contexto atual da conversa, executa a ação
  * correspondente ao tipo do bloco e devolve como o orquestrador deve
@@ -290,6 +347,9 @@ export async function executeFlowNode(node: FlowNode, context: FlowContext): Pro
       const result = await executeAlertNotificationNode(node.data, context);
       return result.ok ? { ok: true, next: "continue" } : { ok: false, error: result.error };
     }
+
+    case "webhook":
+      return executeWebhookNode(node.data, context);
 
     default:
       return { ok: true, next: "continue" };

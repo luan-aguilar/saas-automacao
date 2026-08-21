@@ -16,6 +16,7 @@
 
 import type { Node, Edge } from "@xyflow/react";
 import { createBeautySalonTemplate, BEAUTY_SALON_TEMPLATE_NAME } from "./beauty-salon-template";
+import { createDigitalAnalyticsTemplate, DIGITAL_ANALYTICS_TEMPLATE_NAME } from "./digital-analytics-template";
 
 /**
  * Uma coluna do Kanban de `/pipeline`. `key` usa os mesmos 4 estágios
@@ -60,6 +61,13 @@ export const TEMPLATE_REGISTRY: TemplateDefinition[] = [
       "Menu de categorias, catálogo numerado de sub-serviços e agente de coleta com IA (nome, serviço, dia/horário, fotos quando aplicável) até a notificação de lead qualificado.",
     load: createBeautySalonTemplate,
     pipelineColumns: BEAUTY_SALON_PIPELINE_COLUMNS,
+  },
+  {
+    key: "digital-analytics",
+    name: DIGITAL_ANALYTICS_TEMPLATE_NAME,
+    description:
+      "Diagnóstico comercial gratuito: 6 perguntas de qualificação com IA (nome, segmento, quem atende, CRM, tráfego pago, desafio) e agendamento via webhook (n8n) com o Google Calendar do gestor comercial. Uso interno — nunca liberado para clientes.",
+    load: createDigitalAnalyticsTemplate,
   },
 ];
 
