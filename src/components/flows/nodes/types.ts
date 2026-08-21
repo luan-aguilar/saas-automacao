@@ -94,11 +94,35 @@ export type ConditionData = {
 
 export type AlertNotificationData = {
   label: string;
-  /** Número de WhatsApp do destinatário (ex: recepcionista), com DDI/DDD */
-  recipientPhone: string;
+  /**
+   * @deprecated Substituído por `recipientPhones` (suporta vários números).
+   * Mantido só para não quebrar fluxos salvos antes dessa mudança — ver
+   * `getAlertRecipients`, que lê este campo como fallback quando
+   * `recipientPhones` ainda não foi definido.
+   */
+  recipientPhone?: string;
+  /** Números de WhatsApp dos destinatários (até 5 — ex: recepção, dono, sócio), com DDI/DDD */
+  recipientPhones?: string[];
   /** Mensagem de alerta — aceita variáveis capturadas no fluxo, ex: {{nome}}, {{data}}, {{servico}} */
   message: string;
 };
+
+export const MAX_ALERT_RECIPIENTS = 5;
+
+/**
+ * Lista efetiva de destinatários de um bloco de Notificação/Alerta —
+ * prioriza `recipientPhones` (formato atual) e cai para o antigo
+ * `recipientPhone` (string única) quando o node ainda não foi editado desde
+ * a migração. Descarta entradas vazias.
+ */
+export function getAlertRecipients(data: AlertNotificationData): string[] {
+  const list = data.recipientPhones && data.recipientPhones.length > 0
+    ? data.recipientPhones
+    : data.recipientPhone
+      ? [data.recipientPhone]
+      : [];
+  return list.map((p) => p.trim()).filter((p) => p.length > 0);
+}
 
 export type TriggerNode = Node<TriggerData, "trigger">;
 export type AiResponseNode = Node<AiResponseData, "aiResponse">;

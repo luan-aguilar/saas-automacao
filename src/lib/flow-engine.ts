@@ -28,6 +28,7 @@ import type {
   StaticMessageData,
   ConditionData,
 } from "@/components/flows/nodes/types";
+import { getAlertRecipients } from "@/components/flows/nodes/types";
 import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/encryption";
 import { sendWhatsappMessage, sendWhatsappButtons, sendWhatsappList } from "@/lib/whatsapp-service";
@@ -67,27 +68,41 @@ export type StepResult =
 
 /**
  * Executa o bloco "Notificação / Alerta": interpola as variáveis da conversa
- * na mensagem configurada e dispara via API do WhatsApp para o número do
- * destinatário (ex: recepcionista/dono do salão) configurado no bloco.
+ * na mensagem configurada e dispara via API do WhatsApp para TODOS os
+ * destinatários configurados no bloco (até 5 — ex: recepção, dono, sócio),
+ * em paralelo. Só marca o node como falho (e trava o fluxo do contato em
+ * "aguardando humano") se NENHUM envio funcionar — um número inválido no
+ * meio da lista não pode travar o lead pra sempre.
  */
 export async function executeAlertNotificationNode(
   data: AlertNotificationData,
   context: FlowContext
 ) {
-  if (!data.recipientPhone) {
-    console.warn("[flow-engine] Bloco de notificação sem número de destinatário configurado — ignorado.");
-    return { ok: false as const, error: "Número do destinatário não configurado." };
+  const recipients = getAlertRecipients(data);
+  if (recipients.length === 0) {
+    console.warn("[flow-engine] Bloco de notificação sem nenhum número de destinatário configurado — ignorado.");
+    return { ok: false as const, error: "Nenhum número de destinatário configurado." };
   }
 
   const formattedMessage = interpolateVariables(data.message, context.variables);
 
-  const result = await sendWhatsappMessage(context.userId, data.recipientPhone, formattedMessage);
+  const results = await Promise.all(
+    recipients.map((phone) => sendWhatsappMessage(context.userId, phone, formattedMessage))
+  );
 
-  if (!result.ok) {
-    console.error("[flow-engine] Falha ao enviar notificação de alerta:", result.error);
+  const failures = results.filter((r): r is { ok: false; error: string } => !r.ok);
+  if (failures.length > 0) {
+    console.error(
+      `[flow-engine] Falha ao enviar notificação de alerta para ${failures.length}/${recipients.length} destinatário(s):`,
+      failures.map((f) => f.error)
+    );
   }
 
-  return result;
+  if (failures.length === results.length) {
+    return { ok: false as const, error: failures[0]?.error ?? "Falha ao enviar notificação." };
+  }
+
+  return { ok: true as const };
 }
 
 /**

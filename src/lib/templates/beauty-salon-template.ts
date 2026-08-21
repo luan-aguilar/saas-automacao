@@ -688,7 +688,7 @@ const NODES: Node[] = [
     position: { x: 900, y: 1180 },
     data: {
       label: "Notificação: novo lead qualificado",
-      recipientPhone: "",
+      recipientPhones: [""],
       message: LEAD_NOTIFICATION_MESSAGE,
     },
   },

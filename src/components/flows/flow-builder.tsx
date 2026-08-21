@@ -67,7 +67,7 @@ function defaultDataFor(type: string): Record<string, unknown> {
     case "alertNotification":
       return {
         label: "Notificação / Alerta",
-        recipientPhone: "",
+        recipientPhones: [""],
         message: "Novo agendamento! Nome: {{nome}}, Data: {{data}}, Serviço: {{servico}}",
       };
     default:

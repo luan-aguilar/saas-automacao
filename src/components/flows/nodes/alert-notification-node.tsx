@@ -1,12 +1,16 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { BellRing } from "lucide-react";
 import { NodeShell } from "./node-shell";
-import type { AlertNotificationNode } from "./types";
+import { getAlertRecipients, type AlertNotificationNode } from "./types";
 
 export function AlertNotificationNodeComponent({ data, selected }: NodeProps<AlertNotificationNode>) {
-  const subtitle = data.recipientPhone
-    ? `Alerta para ${data.recipientPhone}`
-    : "Número do destinatário não definido";
+  const recipients = getAlertRecipients(data);
+  const subtitle =
+    recipients.length === 0
+      ? "Nenhum destinatário definido"
+      : recipients.length === 1
+        ? `Alerta para ${recipients[0]}`
+        : `Alerta para ${recipients.length} destinatários`;
 
   return (
     <NodeShell

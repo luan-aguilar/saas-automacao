@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { extractVariableNames } from "./nodes/types";
+import { extractVariableNames, MAX_ALERT_RECIPIENTS } from "./nodes/types";
 import { X, Trash2, AlertTriangle, Plus, List, MessageSquareText } from "lucide-react";
 import type { StaticMessageListItem } from "./nodes/types";
 
@@ -166,15 +166,66 @@ export function NodeConfigDrawer({
         {node.type === "alertNotification" && (
           <>
             <div className="space-y-1.5">
-              <Label>Número de WhatsApp do destinatário</Label>
-              <Input
-                value={data.recipientPhone ?? ""}
-                onChange={(e) => update({ recipientPhone: e.target.value })}
-                placeholder="ex: 5511999998888 (recepcionista)"
-              />
+              <Label>Números de WhatsApp dos destinatários</Label>
               <p className="text-xs text-muted-foreground">
-                Inclua o DDI e o DDD, apenas números (ex: 55 + DDD + número).
+                Até {MAX_ALERT_RECIPIENTS} números — todos recebem a mesma notificação (ex: recepção, dono,
+                sócio). Inclua o DDI e o DDD, apenas números (ex: 55 + DDD + número).
               </p>
+              {(() => {
+                // Preserva os campos exatamente como o operador os deixou
+                // (inclusive vazios, enquanto ele ainda está preenchendo) —
+                // diferente de `getAlertRecipients`, que filtra vazios e é
+                // usada só na hora de efetivamente disparar o alerta.
+                const recipients: string[] =
+                  data.recipientPhones && data.recipientPhones.length > 0
+                    ? data.recipientPhones
+                    : data.recipientPhone
+                      ? [data.recipientPhone]
+                      : [""];
+
+                function setRecipients(next: string[]) {
+                  update({ recipientPhones: next, recipientPhone: undefined });
+                }
+
+                return (
+                  <div className="space-y-2">
+                    {recipients.map((phone: string, index: number) => (
+                      <div key={index} className="flex items-center gap-1.5">
+                        <Input
+                          value={phone}
+                          onChange={(e) => {
+                            const next = [...recipients];
+                            next[index] = e.target.value;
+                            setRecipients(next);
+                          }}
+                          placeholder={`ex: 5511999998888 (destinatário ${index + 1})`}
+                        />
+                        {recipients.length > 1 && (
+                          <button
+                            type="button"
+                            title="Remover este número"
+                            onClick={() => setRecipients(recipients.filter((_, i) => i !== index))}
+                            className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {recipients.length < MAX_ALERT_RECIPIENTS && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setRecipients([...recipients, ""])}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Adicionar número
+                      </Button>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
             <div className="space-y-1.5">
               <Label>Mensagem de alerta</Label>
