@@ -139,3 +139,62 @@ export function resolveNumberedListChoice(history: string, incomingText: string)
   }
   return null;
 }
+
+const WEEKDAY_PATTERNS: { regex: RegExp; dow: number }[] = [
+  { regex: /domingo/i, dow: 0 },
+  { regex: /segunda(-feira)?/i, dow: 1 },
+  { regex: /ter[çc]a(-feira)?/i, dow: 2 },
+  { regex: /quarta(-feira)?/i, dow: 3 },
+  { regex: /quinta(-feira)?/i, dow: 4 },
+  { regex: /sexta(-feira)?/i, dow: 5 },
+  { regex: /s[áa]bado/i, dow: 6 },
+];
+
+function parseBrazilianDate(value: string): Date | null {
+  const match = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!match) return null;
+  const date = new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatBrazilianDate(date: Date): string {
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}/${date.getFullYear()}`;
+}
+
+/**
+ * Se o texto citar um dia da semana (ex: "Terça às 15") SEM nenhuma data
+ * explícita (ex: "23/08") já presente, calcula por código a data exata da
+ * PRÓXIMA ocorrência daquele dia (a partir de amanhã — nunca hoje, mesmo se
+ * hoje for o mesmo dia da semana citado, é ambíguo demais assumir "hoje") e
+ * devolve o texto com o nome do dia substituído pela data concreta,
+ * preservando o resto (ex: o horário). Existe pelo mesmo motivo de
+ * `resolveNumberedListChoice`: pedir pra uma IA "calcular" em que data cai a
+ * próxima terça-feira é aritmética de calendário, não interpretação de
+ * linguagem — resolver isso por código elimina a classe de erro inteira, em
+ * vez de confiar na IA pra fazer a conta certa toda vez.
+ *
+ * Devolve null se não houver menção a dia da semana, se já houver uma data
+ * explícita no texto (nesse caso não há nada a resolver), ou se
+ * `dataAtualDDMMYYYY` não estiver num formato reconhecível.
+ */
+export function resolveWeekdayToDate(text: string, dataAtualDDMMYYYY: string): string | null {
+  if (/\d{1,2}\/\d{1,2}/.test(text)) return null;
+
+  const today = parseBrazilianDate(dataAtualDDMMYYYY);
+  if (!today) return null;
+
+  for (const { regex, dow } of WEEKDAY_PATTERNS) {
+    const match = text.match(regex);
+    if (!match || match.index === undefined) continue;
+
+    let diff = (dow - today.getDay() + 7) % 7;
+    if (diff === 0) diff = 7;
+    const target = new Date(today);
+    target.setDate(today.getDate() + diff);
+
+    return text.slice(0, match.index) + formatBrazilianDate(target) + text.slice(match.index + match[0].length);
+  }
+  return null;
+}

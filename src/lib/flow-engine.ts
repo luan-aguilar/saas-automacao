@@ -36,7 +36,7 @@ import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/encryption";
 import { sendWhatsappMessage, sendWhatsappButtons, sendWhatsappList } from "@/lib/whatsapp-service";
 import { findAvailableSlots, createCalendarEvent, appendSheetRow } from "@/lib/google-api";
-import { emojiNumber, resolveNumberedListChoice } from "@/lib/templates/flow-helpers";
+import { emojiNumber, resolveNumberedListChoice, resolveWeekdayToDate } from "@/lib/templates/flow-helpers";
 
 export type FlowContext = {
   /** ID do usuário (tenant) dono do fluxo — usado para saber qual sessão do WhatsApp usar */
@@ -284,6 +284,21 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
       if (typeof value === "string" && value.trim() !== "") {
         context.variables[key] = value;
       }
+    }
+  }
+
+  // Se a cliente informou o agendamento por dia da semana (ex: "Terça às
+  // 15") em vez de uma data explícita, resolve por código qual é a data
+  // exata da próxima ocorrência daquele dia — ver `resolveWeekdayToDate`.
+  // Sem isso, a mensagem de confirmação final (regra "e" do prompt) mostraria
+  // só "Terça às 15h" pra cliente conferir, sem deixar claro SE isso é a
+  // terça desta semana (pode já ter passado) ou da que vem — e pior, ficaria
+  // a cargo da IA "calcular" isso sozinha a cada vez, o mesmo tipo de erro de
+  // contagem/aritmética já visto em listas numeradas.
+  if (context.variables.data_hora_agendamento && context.variables.data_atual) {
+    const resolvedDate = resolveWeekdayToDate(context.variables.data_hora_agendamento, context.variables.data_atual);
+    if (resolvedDate) {
+      context.variables.data_hora_agendamento = resolvedDate;
     }
   }
 
