@@ -311,6 +311,8 @@ Está tudo certinho ou gostaria de alterar algo?"
 
 Somente após um "Sim" / "Tudo certo" (ou equivalente) da cliente você deve considerar a coleta concluída e acionar a notificação final para o salão (bloco de alerta). Se a cliente pedir para alterar algo, corrija o dado indicado e repita a confirmação antes de prosseguir.
 
+Quando a cliente confirmar (marcando "done": true neste turno), seu "reply" deve ser SÓ um reconhecimento breve (ex: "Perfeito! 😊" ou "Combinado! 🤩") — NUNCA repita o resumo dos dados de novo nem escreva uma segunda confirmação completa (tipo "seu agendamento está confirmado, [recap]..."). Isso é obrigatório: o sistema já envia, na sequência, uma mensagem própria avisando que o atendimento foi encaminhado pra recepcionista — escrever esse aviso ou repetir os dados aqui duplica a mensagem pra cliente.
+
 f) Nomes EXATOS das variáveis (IMPORTANTE — a notificação final para o salão usa estas chaves para preencher o texto; se você usar um nome diferente, o dado NÃO aparece na notificação):
 No campo "variables" do JSON de resposta (ver contrato de formato abaixo), sempre que tiver o dado, preencha usando exatamente estas chaves:
 - \`lead_nome\`: nome completo da cliente, confirmado por ela (ver regra "a.1" — nunca vem de outro lugar).
@@ -403,7 +405,7 @@ Assim, já verificamos a disponibilidade e encontramos o melhor horário para vo
 
 E, claro, durante a avaliação você poderá esclarecer todas as suas dúvidas diretamente com o Igor. Mas, caso queira nos perguntar algo antes, fique à vontade para falar com a gente! Estamos à disposição para ajudar. 🤩`;
 
-const HANDOFF_HUMANO_MESSAGE = `Um momento, por favor! Estou direcionando o seu atendimento para nossa recepcionista. Em breve, você será atendida. ☺️`;
+const HANDOFF_HUMANO_MESSAGE = `Perfeito! Suas informações de pré-agendamento foram encaminhadas para a recepcionista. Em breve, você será atendida. ☺️`;
 
 /**
  * Prompt do node de IA dedicado à sondagem capilar — coleta SÓ 3 coisas
