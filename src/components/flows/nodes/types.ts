@@ -66,6 +66,15 @@ export type AiResponseData = {
     closedWeekday?: string;
     outsideHours?: string;
   };
+  /**
+   * Se true, o motor checa a resposta MAIS RECENTE do contato contra uma
+   * lista fechada de frases curtas de confirmação afirmativa (ver
+   * `isExplicitConfirmation` em `flow-helpers.ts`) e, se bater, injeta uma
+   * dica reforçando que aquilo deve ser tratado como confirmação — reforço
+   * pras frases mais comuns, nunca substitui o julgamento da IA pra
+   * respostas mais longas ou fora da lista.
+   */
+  recognizeConfirmation?: boolean;
 };
 
 /** Tipo de mensagem interativa: botões simples (até 3) ou lista (até 10 itens). */

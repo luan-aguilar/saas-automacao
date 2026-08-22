@@ -321,9 +321,17 @@ Mensagem de confirmação (preencha os colchetes com os valores exatos do bloco 
 
 Está tudo certinho ou gostaria de alterar algo?"
 
-Somente após um "Sim" / "Tudo certo" (ou equivalente) da cliente você deve considerar a coleta concluída e acionar a notificação final para o salão (bloco de alerta). Se a cliente pedir para alterar algo, corrija o dado indicado e repita a confirmação antes de prosseguir.
+Reconhecendo a confirmação (IMPORTANTE — seja bem flexível aqui): aceite como confirmação QUALQUER resposta afirmativa ou equivalente da cliente, mesmo curta, informal ou escrita de um jeito diferente — não exija a palavra "sim" literalmente. Exemplos que DEVEM ser reconhecidos como confirmação: "Sim", "Sim, está certo", "Está certo", "Está correto", "Certo", "Tudo certo", "Tudo certinho", "Ok", "Okay", "Pode", "Pode agendar", "Pode marcar", "Pode confirmar", "Confirma", "Confirmo", "Perfeito", "Isso", "Isso mesmo", "Exatamente", "Pode sim", "Sim, pode agendar", "Tá bom", "Tá certo", "Aham", "Uhum", "Pode deixar", "Está tudo certo", "Não preciso alterar", "Não quero alterar", "Está ótimo", "Pode mandar", "Pode encaminhar" — e qualquer variação de escrita, abreviação, erro de digitação ou linguagem informal com esse mesmo sentido de aprovação. Se você receber uma dica "RESOLUÇÃO AUTOMÁTICA DE CONFIRMAÇÃO", ela já identificou isso por código — siga a dica sem questionar.
 
-Quando a cliente confirmar (marcando "done": true neste turno), seu "reply" deve ser SÓ um reconhecimento breve (ex: "Perfeito! 😊" ou "Combinado! 🤩") — NUNCA repita o resumo dos dados de novo nem escreva uma segunda confirmação completa (tipo "seu agendamento está confirmado, [recap]..."). Isso é obrigatório: o sistema já envia, na sequência, uma mensagem própria avisando que o atendimento foi encaminhado pra recepcionista — escrever esse aviso ou repetir os dados aqui duplica a mensagem pra cliente.
+AÇÃO OBRIGATÓRIA assim que reconhecer uma confirmação válida — marque "done": true e, no "reply" deste turno:
+- NÃO repita os dados do agendamento.
+- NÃO faça de novo a pergunta "Está tudo certinho ou gostaria de alterar algo?".
+- NÃO solicite uma nova confirmação.
+- NÃO entre de novo na etapa de confirmação.
+- NÃO faça nenhuma outra pergunta.
+Seu "reply" deve ser SÓ um reconhecimento breve (ex: "Perfeito! 😊" ou "Combinado! 🤩") — nunca um recap completo. Isso é obrigatório: o sistema já envia, na sequência, sua própria mensagem final avisando que o atendimento foi encaminhado pra recepcionista — repetir dados ou perguntar de novo aqui duplica ou trava a conversa.
+
+Se, em vez de confirmar, a cliente pedir para alterar algo, corrija o dado indicado e repita a confirmação (com os dados já corrigidos) antes de prosseguir — nesse caso específico "done" continua false.
 
 f) Nomes EXATOS das variáveis (IMPORTANTE — a notificação final para o salão usa estas chaves para preencher o texto; se você usar um nome diferente, o dado NÃO aparece na notificação):
 No campo "variables" do JSON de resposta (ver contrato de formato abaixo), sempre que tiver o dado, preencha usando exatamente estas chaves:
@@ -876,6 +884,10 @@ const NODES: Node[] = [
         "voltar pro início",
       ],
       exitTargetNodeId: "bs-menu",
+      // Reforça o reconhecimento de confirmações afirmativas curtas (ex:
+      // "tá bom", "aham", "pode confirmar") — ver `recognizeConfirmation`
+      // em types.ts.
+      recognizeConfirmation: true,
     },
   },
 

@@ -42,6 +42,7 @@ import {
   analyzeDateReference,
   checkScheduleRequest,
   resolveNomeAniversarioPair,
+  isExplicitConfirmation,
 } from "@/lib/templates/flow-helpers";
 
 export type FlowContext = {
@@ -328,7 +329,18 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
     ? `\n\nRESOLUÇÃO AUTOMÁTICA DE NOME+ANIVERSÁRIO: a mensagem mais recente da cliente já foi separada por código — nome: "${nomeAniversarioPair.nome}", aniversário: "${nomeAniversarioPair.aniversario}". Use esses dois valores exatos, não precisa reinterpretar. Se essas forem as duas únicas informações que faltavam, marque "done": true IMEDIATAMENTE neste turno, sem pedir confirmação.`
     : "";
 
-  const userContent = `Histórico da conversa até agora (linhas "Cliente:" são mensagens do contato, linhas "Assistente:" são mensagens já enviadas a ele — inclusive por blocos estáticos do fluxo, não só por você):\n${history}${knownVariablesBlock}${numberedChoiceHint}${dateAlreadyConfirmedHint}${dateReferenceHint}${nomeAniversarioHint}`;
+  // Se a resposta mais recente do contato bater EXATAMENTE com uma das
+  // frases curtas de confirmação afirmativa conhecidas (ver
+  // `isExplicitConfirmation` — lista fornecida pelo dono do salão, ex:
+  // "ok", "tá bom", "aham", "pode confirmar"), reforça que isso deve ser
+  // tratado como confirmação — pra frases mais longas ou fora da lista, a
+  // IA continua responsável por interpretar a intenção normalmente.
+  const confirmationHint =
+    data.recognizeConfirmation && isExplicitConfirmation(context.incomingText ?? "")
+      ? `\n\nRESOLUÇÃO AUTOMÁTICA DE CONFIRMAÇÃO: a resposta mais recente da cliente ("${context.incomingText}") foi reconhecida como uma confirmação afirmativa clara. Se você tinha acabado de mostrar a confirmação dos dados e estava esperando a resposta dela, trate isso como um "sim" — não repita os dados, não peça confirmação de novo, e marque "done": true imediatamente.`
+      : "";
+
+  const userContent = `Histórico da conversa até agora (linhas "Cliente:" são mensagens do contato, linhas "Assistente:" são mensagens já enviadas a ele — inclusive por blocos estáticos do fluxo, não só por você):\n${history}${knownVariablesBlock}${numberedChoiceHint}${dateAlreadyConfirmedHint}${dateReferenceHint}${nomeAniversarioHint}${confirmationHint}`;
 
   const client = new OpenAI({ apiKey });
 

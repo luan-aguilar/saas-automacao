@@ -417,3 +417,67 @@ export function checkScheduleRequest(
   if (dateRef || time) return { valid: true };
   return null;
 }
+
+function normalizeForMatch(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[!?.,;\s\p{Extended_Pictographic}\uFE0F]+$/gu, "")
+    .trim();
+}
+
+/**
+ * Frases curtas de confirmação afirmativa (lista fornecida pelo dono do
+ * salão) — comparadas por igualdade EXATA após normalizar (sem acento,
+ * minúsculo, sem pontuação/emoji no final). Propositalmente uma lista
+ * FECHADA de frases curtas, não um "contains": uma comparação frouxa correria
+ * o risco de reconhecer "não, não é isso" como confirmação só por conter
+ * "isso". Serve como uma dica reforçando o julgamento da IA pras frases mais
+ * comuns — nunca substitui a interpretação dela pra respostas mais longas ou
+ * fora dessa lista, onde entender a intenção da frase é mesmo trabalho de
+ * linguagem natural, não um cálculo que valha a pena tirar da IA.
+ */
+const CONFIRMATION_PHRASES = new Set(
+  [
+    "sim",
+    "sim, esta certo",
+    "sim esta certo",
+    "esta certo",
+    "esta correto",
+    "certo",
+    "tudo certo",
+    "tudo certinho",
+    "ok",
+    "okay",
+    "pode",
+    "pode agendar",
+    "pode marcar",
+    "pode confirmar",
+    "confirma",
+    "confirmo",
+    "perfeito",
+    "isso",
+    "isso mesmo",
+    "exatamente",
+    "pode sim",
+    "sim, pode agendar",
+    "sim pode agendar",
+    "ta bom",
+    "ta certo",
+    "aham",
+    "uhum",
+    "pode deixar",
+    "esta tudo certo",
+    "nao precisa alterar",
+    "nao quero alterar",
+    "esta otimo",
+    "pode mandar",
+    "pode encaminhar",
+  ].map(normalizeForMatch)
+);
+
+/** Se o texto (normalizado) bater EXATAMENTE com uma das frases curtas de confirmação conhecidas, devolve true. */
+export function isExplicitConfirmation(text: string): boolean {
+  return CONFIRMATION_PHRASES.has(normalizeForMatch(text));
+}
