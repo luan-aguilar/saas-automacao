@@ -36,7 +36,7 @@ import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/encryption";
 import { sendWhatsappMessage, sendWhatsappButtons, sendWhatsappList } from "@/lib/whatsapp-service";
 import { findAvailableSlots, createCalendarEvent, appendSheetRow } from "@/lib/google-api";
-import { emojiNumber } from "@/lib/templates/flow-helpers";
+import { emojiNumber, resolveNumberedListChoice } from "@/lib/templates/flow-helpers";
 
 export type FlowContext = {
   /** ID do usuário (tenant) dono do fluxo — usado para saber qual sessão do WhatsApp usar */
@@ -239,7 +239,18 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
           .join("\n")}`
       : "";
 
-  const userContent = `Histórico da conversa até agora (linhas "Cliente:" são mensagens do contato, linhas "Assistente:" são mensagens já enviadas a ele — inclusive por blocos estáticos do fluxo, não só por você):\n${history}${knownVariablesBlock}`;
+  // Se a última lista numerada mostrada ao contato tinha, no número que ele
+  // respondeu agora, um item identificável (convenção de emoji "keycap" —
+  // ver `resolveNumberedListChoice`), resolve isso por CÓDIGO em vez de
+  // pedir pro modelo "contar" a posição certa numa lista longa — é
+  // exatamente esse tipo de contagem que falha em listas de 15+ itens (ex:
+  // cliente respondeu "5" e o modelo confirmou o item 6).
+  const numberedChoice = resolveNumberedListChoice(history, context.incomingText ?? "");
+  const numberedChoiceHint = numberedChoice
+    ? `\n\nRESOLUÇÃO AUTOMÁTICA DE LISTA NUMERADA: a última lista numerada mostrada ao cliente tinha, no número que ele acabou de responder, EXATAMENTE este item: "${numberedChoice}". Use esse texto exato pra preencher o campo correspondente — essa contagem já foi feita por código de forma exata, não tente recontar a lista você mesma.`
+    : "";
+
+  const userContent = `Histórico da conversa até agora (linhas "Cliente:" são mensagens do contato, linhas "Assistente:" são mensagens já enviadas a ele — inclusive por blocos estáticos do fluxo, não só por você):\n${history}${knownVariablesBlock}${numberedChoiceHint}`;
 
   const client = new OpenAI({ apiKey });
 
