@@ -43,6 +43,14 @@ export type AiResponseData = {
    * ÚNICA pergunta em aberto é nome + aniversário.
    */
   resolveNomeAniversario?: boolean;
+  /**
+   * Configuração de dias/horário de funcionamento — usada junto com
+   * `resolveDateReferences` pra validar por código (ver `checkScheduleRequest`
+   * em `flow-helpers.ts`) se o dia/horário pedido está dentro do
+   * funcionamento, além de já passado ou não. `openDays` usa o índice do
+   * JS (`Date.getDay()`: 0=domingo ... 6=sábado).
+   */
+  businessHours?: { openDays: number[]; openHour: number; closeHour: number };
 };
 
 /** Tipo de mensagem interativa: botões simples (até 3) ou lista (até 10 itens). */

@@ -286,3 +286,132 @@ export function resolveNomeAniversarioPair(text: string): { nome: string; aniver
   }
   return null;
 }
+
+const FIXED_HOLIDAYS: { month: number; day: number; name: string }[] = [
+  { month: 1, day: 1, name: "Confraternização Universal" },
+  { month: 4, day: 21, name: "Tiradentes" },
+  { month: 5, day: 1, name: "Dia do Trabalho" },
+  { month: 9, day: 7, name: "Independência do Brasil" },
+  { month: 10, day: 12, name: "Nossa Senhora Aparecida" },
+  { month: 11, day: 2, name: "Finados" },
+  { month: 11, day: 15, name: "Proclamação da República" },
+  { month: 11, day: 20, name: "Consciência Negra" },
+  { month: 12, day: 25, name: "Natal" },
+];
+
+/** Domingo de Páscoa daquele ano (algoritmo de Gauss/Computus, calendário gregoriano) — usado só pra derivar os feriados móveis abaixo. */
+function easterSunday(year: number): Date {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(year, month - 1, day);
+}
+
+function addDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function isSameCalendarDate(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+/**
+ * Nome do feriado nacional que cai numa data, ou null se não for feriado.
+ * Cobre os fixos (mesma data todo ano) e os móveis calculados a partir da
+ * Páscoa daquele ano (Carnaval, Sexta-feira Santa, Corpus Christi) — nunca
+ * precisa de atualização manual ano a ano.
+ */
+export function holidayName(date: Date): string | null {
+  for (const holiday of FIXED_HOLIDAYS) {
+    if (date.getMonth() + 1 === holiday.month && date.getDate() === holiday.day) return holiday.name;
+  }
+  const easter = easterSunday(date.getFullYear());
+  const movable: { offsetDays: number; name: string }[] = [
+    { offsetDays: -47, name: "Carnaval" },
+    { offsetDays: -2, name: "Sexta-feira Santa" },
+    { offsetDays: 60, name: "Corpus Christi" },
+  ];
+  for (const holiday of movable) {
+    if (isSameCalendarDate(date, addDays(easter, holiday.offsetDays))) return holiday.name;
+  }
+  return null;
+}
+
+const TIME_RE = /\b(?:às|as)\s*(\d{1,2})(?::(\d{2}))?\s*h?(?:oras|rs)?\b|\b(\d{1,2}):(\d{2})\b|\b(\d{1,2})\s*h(?:oras|rs)?\b/i;
+
+/** Extrai um horário (ex: "às 8", "20h", "9:30", "8 hrs") do texto — devolve null se nenhum padrão reconhecível de horário aparecer. */
+export function extractTime(text: string): { hour: number; minute: number } | null {
+  const match = text.match(TIME_RE);
+  if (!match) return null;
+  const hour = Number(match[1] ?? match[3] ?? match[5]);
+  const minute = Number(match[2] ?? match[4] ?? 0);
+  if (Number.isNaN(hour) || hour < 0 || hour > 23) return null;
+  if (Number.isNaN(minute) || minute < 0 || minute > 59) return null;
+  return { hour, minute };
+}
+
+export type ScheduleCheckResult =
+  | { valid: true }
+  | { valid: false; reason: "date_passed"; formatted: string; weekday: string }
+  | { valid: false; reason: "closed_weekday"; formatted: string; weekday: string }
+  | { valid: false; reason: "holiday"; formatted: string; weekday: string; holiday: string }
+  | { valid: false; reason: "outside_hours"; hour: number; minute: number };
+
+/**
+ * Validação completa de um pedido de agendamento (dia + horário), por
+ * código — nunca deixe a IA julgar sozinha se uma data/horário é válido:
+ * já vimos ela errar tanto aritmética de calendário simples (ex: achar que
+ * uma data futura "já passou") quanto, de forma mais grave, RE-validar e
+ * rejeitar por conta própria um valor que já tinha sido aceito e
+ * confirmado num passo anterior do fluxo — mesmo com instrução explícita
+ * pra só copiar dados já confirmados sem recalcular.
+ *
+ * Verifica, nesta ordem: (1) se a data já passou, (2) se o dia da semana
+ * está fora do funcionamento, (3) se a data é feriado, (4) se o horário
+ * mencionado está fora do expediente. Devolve o PRIMEIRO problema
+ * encontrado, ou `{valid: true}` se não achou nenhum. Devolve `null` se o
+ * texto não tiver nenhuma referência de dia OU horário reconhecível (nesse
+ * caso não há nada pra validar ainda — ex: cliente só disse "amanhã de
+ * manhã", sem dia da semana nem horário explícitos).
+ */
+export function checkScheduleRequest(
+  text: string,
+  dataAtualDDMMYYYY: string,
+  hours: { openDays: number[]; openHour: number; closeHour: number }
+): ScheduleCheckResult | null {
+  const dateRef = analyzeDateReference(text, dataAtualDDMMYYYY);
+
+  if (dateRef) {
+    if (dateRef.kind === "explicit" && dateRef.alreadyPassed) {
+      return { valid: false, reason: "date_passed", formatted: dateRef.formatted, weekday: dateRef.weekday };
+    }
+    if (!hours.openDays.includes(dateRef.date.getDay())) {
+      return { valid: false, reason: "closed_weekday", formatted: dateRef.formatted, weekday: dateRef.weekday };
+    }
+    const holiday = holidayName(dateRef.date);
+    if (holiday) {
+      return { valid: false, reason: "holiday", formatted: dateRef.formatted, weekday: dateRef.weekday, holiday };
+    }
+  }
+
+  const time = extractTime(text);
+  if (time && (time.hour < hours.openHour || time.hour > hours.closeHour || (time.hour === hours.closeHour && time.minute > 0))) {
+    return { valid: false, reason: "outside_hours", hour: time.hour, minute: time.minute };
+  }
+
+  if (dateRef || time) return { valid: true };
+  return null;
+}

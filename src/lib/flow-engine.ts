@@ -36,7 +36,13 @@ import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/encryption";
 import { sendWhatsappMessage, sendWhatsappButtons, sendWhatsappList } from "@/lib/whatsapp-service";
 import { findAvailableSlots, createCalendarEvent, appendSheetRow } from "@/lib/google-api";
-import { emojiNumber, resolveNumberedListChoice, analyzeDateReference, resolveNomeAniversarioPair } from "@/lib/templates/flow-helpers";
+import {
+  emojiNumber,
+  resolveNumberedListChoice,
+  analyzeDateReference,
+  checkScheduleRequest,
+  resolveNomeAniversarioPair,
+} from "@/lib/templates/flow-helpers";
 
 export type FlowContext = {
   /** ID do usuário (tenant) dono do fluxo — usado para saber qual sessão do WhatsApp usar */
@@ -250,23 +256,50 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
     ? `\n\nRESOLUÇÃO AUTOMÁTICA DE LISTA NUMERADA: a última lista numerada mostrada ao cliente tinha, no número que ele acabou de responder, EXATAMENTE este item: "${numberedChoice}". Use esse texto exato pra preencher o campo correspondente — essa contagem já foi feita por código de forma exata, não tente recontar a lista você mesma.`
     : "";
 
-  // Se a mensagem mais recente do cliente citar um dia (explícito, tipo "dia
-  // 25"/"25/08", ou por nome de dia da semana, tipo "Terça"), resolve por
-  // CÓDIGO se já passou ou qual é a data exata correspondente — nunca deixe
-  // isso a cargo da IA, é o mesmo tipo de erro de "contagem"/aritmética já
-  // visto em listas numeradas (ver `resolveNumberedListChoice` acima). Ao
-  // injetar isso ANTES da chamada à OpenAI (e não só depois, reescrevendo o
-  // valor salvo), o texto que a IA escreve pro cliente já pode confirmar o
-  // dia exato na hora, em vez de só aparecer certo na confirmação final.
-  const dateReference =
-    data.resolveDateReferences && context.variables.data_atual
-      ? analyzeDateReference(context.incomingText ?? "", context.variables.data_atual)
+  // PROTEÇÃO (aplica pra QUALQUER node, sem precisar de flag): se
+  // `data_hora_agendamento` já está em "DADOS JÁ CONFIRMADOS" — ou seja, já
+  // foi validado e aceito por um passo anterior do fluxo — nunca deixe a IA
+  // "reavaliar" ou rejeitar esse valor de novo. Em teste ao vivo, mesmo com
+  // a instrução geral de "copie dados já confirmados sem recalcular" (ver
+  // AI_JSON_CONTRACT), o modelo ainda assim re-examinou e rejeitou uma data
+  // JÁ confirmada como se fosse nova — não existe cenário legítimo em que
+  // um node precise reconferir isso, então reforça de forma direcionada.
+  const dateAlreadyConfirmedHint = context.variables.data_hora_agendamento
+    ? `\n\nATENÇÃO: o campo \`data_hora_agendamento\` já está em "DADOS JÁ CONFIRMADOS" (valor: "${context.variables.data_hora_agendamento}") — já foi validado (dia, horário de funcionamento, feriados) e ACEITO num passo anterior do fluxo. NUNCA reavalie, recalcule ou rejeite esse valor de novo (nem como "já passou", nem "fora do horário") — copie exatamente como está, sem questionar.`
+    : "";
+
+  // Se a mensagem mais recente do cliente citar um dia/horário pro
+  // agendamento, valida por CÓDIGO se já passou, se cai num dia fechado
+  // (fora de terça a sábado), se é feriado, ou se o horário está fora do
+  // expediente — nunca deixe isso a cargo da IA, é o mesmo tipo de erro de
+  // "contagem"/aritmética já visto em listas numeradas (ver
+  // `resolveNumberedListChoice` acima), agora incluindo regras de negócio
+  // que também não devem depender do julgamento do modelo. Só roda quando
+  // `data_hora_agendamento` AINDA NÃO está confirmado (a proteção acima já
+  // cobre o caso contrário) — evita computar isso duas vezes sem sentido.
+  const scheduleCheck =
+    data.resolveDateReferences && data.businessHours && context.variables.data_atual && !context.variables.data_hora_agendamento
+      ? checkScheduleRequest(context.incomingText ?? "", context.variables.data_atual, data.businessHours)
       : null;
+
   let dateReferenceHint = "";
-  if (dateReference?.kind === "explicit" && dateReference.alreadyPassed) {
-    dateReferenceHint = `\n\nRESOLUÇÃO AUTOMÁTICA DE DATA: JÁ PASSOU. A data que a cliente acabou de mencionar (${dateReference.formatted}, ${dateReference.weekday}) já passou — hoje é ${context.variables.data_atual}. Isso já foi calculado por código, não recalcule nem questione. Rejeite educadamente: não preencha nenhuma variável de agendamento com essa data, avise que ela já passou e peça uma nova data. Não marque "done": true neste turno por causa disso.`;
-  } else if (dateReference) {
-    dateReferenceHint = `\n\nRESOLUÇÃO AUTOMÁTICA DE DATA: NÃO PASSOU. O dia exato que a cliente quis dizer é ${dateReference.weekday}, dia ${dateReference.formatted} — já calculado por código a partir de hoje (${context.variables.data_atual}), não recalcule nem troque por outro dia. Se isso completa a informação de dia/horário que faltava, PODE ACEITAR normalmente: preencha a variável de agendamento juntando esse dia calculado com o HORÁRIO REAL que a cliente mencionou na mensagem dela (o horário que ela de fato escreveu, nunca um valor inventado ou um texto de exemplo). Na sua resposta, confirme os dois de volta pra cliente de forma natural: o dia exato calculado acima E o horário real que ela informou — isso é obrigatório sempre que ela citar um dia da semana ou uma data, pra ela poder conferir se entendeu certo.`;
+  if (scheduleCheck && !scheduleCheck.valid) {
+    if (scheduleCheck.reason === "date_passed") {
+      dateReferenceHint = `\n\nRESOLUÇÃO AUTOMÁTICA DE DATA: JÁ PASSOU. A data que a cliente acabou de mencionar (${scheduleCheck.formatted}, ${scheduleCheck.weekday}) já passou — hoje é ${context.variables.data_atual}. Isso já foi calculado por código, não recalcule nem questione. Rejeite educadamente: não preencha nenhuma variável de agendamento com essa data, avise que ela já passou e peça uma nova data. Não marque "done": true neste turno por causa disso.`;
+    } else if (scheduleCheck.reason === "closed_weekday") {
+      dateReferenceHint = `\n\nRESOLUÇÃO AUTOMÁTICA DE DATA: FORA DO DIA DE FUNCIONAMENTO. A cliente pediu ${scheduleCheck.weekday}, dia ${scheduleCheck.formatted} — não atendemos nesse dia da semana. Isso já foi calculado por código, não questione. Rejeite educadamente (algo como: "Desculpa, mas atendemos somente de Terça a Sábado. Poderia escolher outro dia da semana, por favor."), não preencha nenhuma variável de agendamento, não marque "done": true neste turno.`;
+    } else if (scheduleCheck.reason === "holiday") {
+      dateReferenceHint = `\n\nRESOLUÇÃO AUTOMÁTICA DE DATA: FERIADO. A data que a cliente pediu (${scheduleCheck.formatted}, ${scheduleCheck.weekday}) é feriado (${scheduleCheck.holiday}) — não funcionamos nesse dia. Isso já foi calculado por código, não questione. Rejeite educadamente (algo como: "Desculpe, mas não trabalhamos de feriado. Poderia escolher outro dia de Terça a Sábado, por favor."), não preencha nenhuma variável de agendamento, não marque "done": true neste turno.`;
+    } else if (scheduleCheck.reason === "outside_hours") {
+      const hh = String(scheduleCheck.hour).padStart(2, "0");
+      const mm = String(scheduleCheck.minute).padStart(2, "0");
+      dateReferenceHint = `\n\nRESOLUÇÃO AUTOMÁTICA DE DATA: FORA DO HORÁRIO DE FUNCIONAMENTO. O horário que a cliente pediu (${hh}:${mm}) está fora do expediente. Isso já foi calculado por código, não questione. Rejeite educadamente (algo como: "Desculpe, mas nosso horário de atendimento é das 09h às 18h. Poderia escolher outro horário, por favor."), não preencha nenhuma variável de agendamento, não marque "done": true neste turno.`;
+    }
+  } else if (scheduleCheck?.valid) {
+    const dateReference = analyzeDateReference(context.incomingText ?? "", context.variables.data_atual!);
+    if (dateReference) {
+      dateReferenceHint = `\n\nRESOLUÇÃO AUTOMÁTICA DE DATA: NÃO PASSOU, dentro do funcionamento. O dia exato que a cliente quis dizer é ${dateReference.weekday}, dia ${dateReference.formatted} — já calculado e validado por código (dia da semana e horário conferidos, dentro do funcionamento). Se isso completa a informação de dia/horário que faltava, PODE ACEITAR normalmente: preencha a variável de agendamento juntando esse dia calculado com o HORÁRIO REAL que a cliente mencionou na mensagem dela (o horário que ela de fato escreveu, nunca um valor inventado ou um texto de exemplo). Na sua resposta, confirme os dois de volta pra cliente de forma natural: o dia exato calculado acima E o horário real que ela informou — isso é obrigatório sempre que ela citar um dia da semana ou uma data, pra ela poder conferir se entendeu certo.`;
+    }
   }
 
   // Se a resposta mais recente do contato for exatamente "nome numa linha,
@@ -282,7 +315,7 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
     ? `\n\nRESOLUÇÃO AUTOMÁTICA DE NOME+ANIVERSÁRIO: a mensagem mais recente da cliente já foi separada por código — nome: "${nomeAniversarioPair.nome}", aniversário: "${nomeAniversarioPair.aniversario}". Use esses dois valores exatos, não precisa reinterpretar. Se essas forem as duas únicas informações que faltavam, marque "done": true IMEDIATAMENTE neste turno, sem pedir confirmação.`
     : "";
 
-  const userContent = `Histórico da conversa até agora (linhas "Cliente:" são mensagens do contato, linhas "Assistente:" são mensagens já enviadas a ele — inclusive por blocos estáticos do fluxo, não só por você):\n${history}${knownVariablesBlock}${numberedChoiceHint}${dateReferenceHint}${nomeAniversarioHint}`;
+  const userContent = `Histórico da conversa até agora (linhas "Cliente:" são mensagens do contato, linhas "Assistente:" são mensagens já enviadas a ele — inclusive por blocos estáticos do fluxo, não só por você):\n${history}${knownVariablesBlock}${numberedChoiceHint}${dateAlreadyConfirmedHint}${dateReferenceHint}${nomeAniversarioHint}`;
 
   const client = new OpenAI({ apiKey });
 
