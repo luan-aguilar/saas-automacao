@@ -249,6 +249,24 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
     return { ok: true, next: "wait", sentText: rejectionText, externalId: sendResult.externalId };
   }
 
+  // Curto-circuito de confirmação: se a resposta mais recente do contato
+  // bater com uma frase de confirmação conhecida (ver `isExplicitConfirmation`)
+  // E todas as variáveis pré-requisito já estiverem confirmadas (ou seja, a
+  // mensagem de confirmação com os dados JÁ foi mostrada num turno
+  // anterior), pula a IA inteiramente — não envia nenhuma mensagem própria,
+  // só avança pro próximo node. Sem isso, o "reply" de reconhecimento da IA
+  // (ex: "Perfeito! 😊") chega logo antes da mensagem final do fluxo (que
+  // também pode começar com "Perfeito!"), soando como a mesma mensagem
+  // enviada duas vezes.
+  if (
+    data.recognizeConfirmation &&
+    data.confirmationRequiresVariables &&
+    data.confirmationRequiresVariables.every((key) => !!context.variables[key]?.trim()) &&
+    isExplicitConfirmation(context.incomingText ?? "")
+  ) {
+    return { ok: true, next: "continue" };
+  }
+
   const config = await prisma.config.findUnique({ where: { userId: context.userId } });
 
   if (!config?.openaiApiKeyEncrypted) {

@@ -98,6 +98,17 @@ export type AiResponseData = {
    * respostas mais longas ou fora da lista.
    */
   recognizeConfirmation?: boolean;
+  /**
+   * Se definido, junto com `recognizeConfirmation`: quando a resposta MAIS
+   * RECENTE do contato bater com uma frase de confirmação conhecida (ver
+   * `isExplicitConfirmation`) E todas as variáveis nesta lista já
+   * estiverem confirmadas, o motor PULA a IA inteiramente neste turno — não
+   * envia nenhuma mensagem própria, só avança pro próximo node. Existe pra
+   * evitar uma mensagem intermediária redundante (ex: "Perfeito! 😊") logo
+   * antes da mensagem final do fluxo (ex: bloco de handoff humano), que já
+   * cobre o reconhecimento — soa como a mesma coisa dita duas vezes.
+   */
+  confirmationRequiresVariables?: string[];
 };
 
 /** Tipo de mensagem interativa: botões simples (até 3) ou lista (até 10 itens). */

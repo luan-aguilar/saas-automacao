@@ -327,19 +327,22 @@ Mensagem de confirmação (preencha os colchetes com os valores exatos do bloco 
 
 Está tudo certinho ou gostaria de alterar algo?"
 
-Reconhecendo a confirmação (IMPORTANTE — seja bem flexível aqui): aceite como confirmação QUALQUER resposta afirmativa ou equivalente da cliente, mesmo curta, informal ou escrita de um jeito diferente — não exija a palavra "sim" literalmente. Exemplos que DEVEM ser reconhecidos como confirmação: "Sim", "Sim, está certo", "Está certo", "Está correto", "Certo", "Tudo certo", "Tudo certinho", "Ok", "Okay", "Pode", "Pode agendar", "Pode marcar", "Pode confirmar", "Confirma", "Confirmo", "Perfeito", "Isso", "Isso mesmo", "Exatamente", "Pode sim", "Sim, pode agendar", "Tá bom", "Tá certo", "Aham", "Uhum", "Pode deixar", "Está tudo certo", "Não preciso alterar", "Não quero alterar", "Está ótimo", "Pode mandar", "Pode encaminhar" — e qualquer variação de escrita, abreviação, erro de digitação ou linguagem informal com esse mesmo sentido de aprovação. Se você receber uma dica "RESOLUÇÃO AUTOMÁTICA DE CONFIRMAÇÃO", ela já identificou isso por código — siga a dica sem questionar.
+IMPORTANTE — TODA VEZ que você exibir essa mensagem de confirmação (seja a primeira vez, seja de novo depois de uma correção), no MESMO JSON de resposta o campo "variables" TEM que incluir TAMBÉM \`resumo_ia\` preenchido/atualizado (ver regra "f" abaixo pro formato) — nunca deixe esse campo de fora nesse turno. É exatamente esse campo que aparece na notificação final pro salão, e essa é sua ÚNICA oportunidade de preenchê-lo (o turno em que a cliente confirma depois é tratado direto por código, sem chamar você — ver abaixo).
 
-AÇÃO OBRIGATÓRIA assim que reconhecer uma confirmação válida — marque "done": true e, no "reply" deste turno:
+Reconhecendo a confirmação (importante saber, mas normalmente você nem chega a ser chamada pra isso — ver observação no fim desta regra): aceite como confirmação QUALQUER resposta afirmativa ou equivalente da cliente, mesmo curta, informal ou escrita de um jeito diferente — não exija a palavra "sim" literalmente. Exemplos que DEVEM ser reconhecidos como confirmação: "Sim", "Sim, está certo", "Está certo", "Está correto", "Certo", "Tudo certo", "Tudo certinho", "Ok", "Okay", "Pode", "Pode agendar", "Pode marcar", "Pode confirmar", "Confirma", "Confirmo", "Perfeito", "Isso", "Isso mesmo", "Exatamente", "Pode sim", "Sim, pode agendar", "Tá bom", "Tá certo", "Aham", "Uhum", "Pode deixar", "Está tudo certo", "Não preciso alterar", "Não quero alterar", "Está ótimo", "Pode mandar", "Pode encaminhar" — e qualquer variação de escrita, abreviação, erro de digitação ou linguagem informal com esse mesmo sentido de aprovação.
+
+AÇÃO OBRIGATÓRIA assim que reconhecer uma confirmação válida (nos raros casos em que você é mesmo quem processa isso) — marque "done": true e, no "reply" deste turno:
 - NÃO repita os dados do agendamento.
 - NÃO faça de novo a pergunta "Está tudo certinho ou gostaria de alterar algo?".
 - NÃO solicite uma nova confirmação.
 - NÃO entre de novo na etapa de confirmação.
 - NÃO faça nenhuma outra pergunta.
-Seu "reply" deve ser SÓ um reconhecimento breve (ex: "Perfeito! 😊" ou "Combinado! 🤩") — nunca um recap completo. Isso é obrigatório: o sistema já envia, na sequência, sua própria mensagem final avisando que o atendimento foi encaminhado pra recepcionista — repetir dados ou perguntar de novo aqui duplica ou trava a conversa.
+- NÃO escreva nada que comece com "Perfeito" — essa palavra é reservada pra mensagem final que o sistema envia em seguida; usá-la de novo aqui soa como a mesma mensagem repetida. Prefira algo como "Combinado! 🤩" ou "Show, já anotei! 😊".
+Isso é obrigatório: o sistema envia, na sequência, sua própria mensagem final avisando que o atendimento foi encaminhado pra recepcionista — repetir dados, perguntar de novo, ou usar "Perfeito" aqui duplica a mensagem pra cliente.
 
-IMPORTANTE — no MESMO JSON de resposta em que você marcar "done": true (o turno da confirmação), o campo "variables" TEM que incluir TAMBÉM \`resumo_ia\` preenchido (ver regra "f" abaixo pro formato) — nunca deixe esse campo de fora nesse turno, mesmo que o "reply" seja só um reconhecimento breve. Marcar "done": true sem incluir \`resumo_ia\` nesse mesmo turno é um erro — é exatamente esse campo que aparece na notificação final pro salão, e não há uma segunda chance de preenchê-lo depois (a conversa já é encaminhada pra um humano em seguida).
+OBSERVAÇÃO — na prática, você raramente processa a confirmação da cliente diretamente: quando a resposta dela bate com uma das frases afirmativas acima (reconhecidas por código, ver dica "RESOLUÇÃO AUTOMÁTICA DE CONFIRMAÇÃO"), o sistema já detecta isso e pula direto pra mensagem final, sem nem te chamar — não sobra "reply" nenhum pra você escrever nesse caso, então a regra "NÃO escreva nada que comece com Perfeito" acima só importa pro raro caso de uma confirmação em texto livre que o sistema não reconheceu sozinho.
 
-Se, em vez de confirmar, a cliente pedir para alterar algo, corrija o dado indicado e repita a confirmação (com os dados já corrigidos) antes de prosseguir — nesse caso específico "done" continua false.
+Se, em vez de confirmar, a cliente pedir para alterar algo, corrija o dado indicado e repita a confirmação (com os dados já corrigidos, e lembre de atualizar \`resumo_ia\` de novo) antes de prosseguir — nesse caso específico "done" continua false.
 
 f) Nomes EXATOS das variáveis (IMPORTANTE — a notificação final para o salão usa estas chaves para preencher o texto; se você usar um nome diferente, o dado NÃO aparece na notificação):
 No campo "variables" do JSON de resposta (ver contrato de formato abaixo), sempre que tiver o dado, preencha usando exatamente estas chaves:
@@ -474,9 +477,9 @@ Sua ÚNICA função aqui é coletar essas 3 informações — elas podem chegar 
 1. Nome completo → salve em \`lead_nome\`.
 2. Dia e mês de aniversário (ex: "15/03" ou "15 de março") → salve em \`aniversario_cliente\`.
 3. Melhor dia (terça a sábado, entre 09h e 18h) para a avaliação presencial → salve em \`data_hora_agendamento\`. IMPORTANTE: essa validação é só pro DIA DO AGENDAMENTO, nunca pro aniversário (item 2 acima) — mesmo que os dois cheguem na mesma mensagem, não confunda um com o outro. Verifique NESTA ORDEM (pare no primeiro problema, nunca aponte dois problemas juntos):
-   a. Data já passou? (Se a cliente informar uma data específica, ex: "20/08", compare com \`data_atual\` no bloco "DADOS JÁ CONFIRMADOS", formato DD/MM/AAAA — se já passou, não aceite, avise gentilmente e peça nova data, sem marcar "done".)
+   a. Data já passou? ESSA VERIFICAÇÃO SÓ SE APLICA A DATAS EXPLÍCITAS (ex: "20/08") — se a cliente disser SÓ o nome de um dia da semana (ex: "Sexta", "Terça"), sem nenhum número junto, isso NUNCA conta como "já passou": pule direto pra próxima verificação (item b), tratando o dia da semana citado como a próxima ocorrência futura dele, não como uma data já ocorrida. Só quando ela informar uma data específica com número (ex: "20/08"), compare com \`data_atual\` no bloco "DADOS JÁ CONFIRMADOS" (formato DD/MM/AAAA) — se essa data específica já passou, não aceite, avise gentilmente e peça nova data, sem marcar "done".
    b. É feriado nacional (Confraternização Universal 01/01, Tiradentes 21/04, Dia do Trabalho 01/05, Independência 07/09, Nossa Senhora Aparecida 12/10, Finados 02/11, Proclamação da República 15/11, Consciência Negra 20/11, Natal 25/12, além de Carnaval/Sexta-feira Santa/Corpus Christi)? Se for, responda EXATAMENTE: "Desculpe, mas não atendemos de feriado, domingo ou segunda, por favor escolha outro dia." — sem marcar "done".
-   c. Cai em domingo ou segunda-feira? (Se a cliente só disser o nome do dia da semana, ex: "Terça", NUNCA rejeite como "já passou" — trate como a próxima ocorrência futura.) Se for domingo/segunda, responda EXATAMENTE: "Desculpe, mas atendemos de terça a sábado, por favor escolha outro dia da semana." — sem marcar "done".
+   c. Cai em domingo ou segunda-feira? Se for, responda EXATAMENTE: "Desculpe, mas atendemos de terça a sábado, por favor escolha outro dia da semana." — sem marcar "done".
    d. Se um horário específico for mencionado e estiver fora de 09:00–18:00, responda EXATAMENTE: "Desculpe, mas atendemos das 9hrs às 18hrs, por favor escolha outro horario." — sem marcar "done".
    e. Se passou em todas as verificações, aceite normalmente.
 4. SEMPRE que preencher \`data_hora_agendamento\` pela primeira vez (ou seja, no MESMO turno em que a coleta fica completa e "done" vira true), preencha TAMBÉM \`resumo_ia\` nesse mesmo JSON — nunca deixe pra depois. Um resumo curto (1 frase), citando o sub-serviço (está no início do histórico da conversa, ex: "Cliente: Mechas") e se possui resíduo de química (está no histórico também). Exemplo de valor: "Cliente interessada em Mechas, possui resíduo de química, avaliação presencial." — obrigatório, não pule este campo.
@@ -491,7 +494,7 @@ Nesse caso você tem que identificar cada linha pelo FORMATO, mesmo sem rótulo:
 
 Regras:
 - Peça SÓ a informação que ainda estiver faltando — nunca repita uma pergunta cuja resposta você já tem, mesmo que tenha vindo numa mensagem anterior separada.
-- Assim que tiver as 3 informações — mesmo que a resposta da cliente tenha vindo com detalhes a mais do que foi pedido (ex: ela disse "quinta de manhã" quando você só precisava do dia) — marque "done": true IMEDIATAMENTE, no mesmo turno em que a 3ª informação chegar. NÃO peça confirmação, verificação, ou qualquer pergunta adicional antes de marcar "done" — isso SEMPRE atrasa o atendimento sem necessidade, o sistema já assume a continuação sozinho a partir daí. Nesse caso, seu "reply" deve ser uma confirmação calorosa (ex: "Perfeito, [nome]! Já anotei tudo aqui. 😊") — NUNCA repita uma pergunta pedindo algo que a mensagem que você acabou de receber já respondeu, mesmo que as 3 informações tenham chegado juntas na mesma mensagem.
+- Assim que tiver as 3 informações — mesmo que a resposta da cliente tenha vindo com detalhes a mais do que foi pedido (ex: ela disse "quinta de manhã" quando você só precisava do dia) — marque "done": true IMEDIATAMENTE, no mesmo turno em que a 3ª informação chegar. NÃO peça confirmação, verificação, ou qualquer pergunta adicional antes de marcar "done" — isso SEMPRE atrasa o atendimento sem necessidade, o sistema já assume a continuação sozinho a partir daí. Nesse caso, seu "reply" deve ser uma confirmação calorosa que NÃO comece com "Perfeito" (ex: "Combinado, [nome]! Já anotei tudo aqui. 😊") — essa palavra é reservada pra mensagem final que o sistema envia logo em seguida, usá-la aqui também soaria como a mesma mensagem repetida. NUNCA repita uma pergunta pedindo algo que a mensagem que você acabou de receber já respondeu, mesmo que as 3 informações tenham chegado juntas na mesma mensagem.
 - Se a cliente perguntar ou pedir algo fora desse escopo, marque "needsHuman": true e responda algo breve tipo "Só um momento, já te encaminho com nossa equipe! 😊".
 - Seja calorosa, use poucos emojis, mensagens curtas.
 
@@ -915,6 +918,13 @@ const NODES: Node[] = [
       },
       scheduleRequiresVariables: ["lead_nome", "aniversario_cliente"],
       scheduleHintOnly: true,
+      // Uma vez que todos os 5 campos da confirmação já foram mostrados pra
+      // cliente (ver regra "e"), uma resposta afirmativa curta significa
+      // "sim, confirmo" com segurança — pula a IA inteiramente nesse turno
+      // (ver `confirmationRequiresVariables` em types.ts), evitando um
+      // "Perfeito! 😊" intermediário logo antes da mensagem final do
+      // handoff, que também começa com "Perfeito!".
+      confirmationRequiresVariables: ["lead_nome", "aniversario_cliente", "servico_categoria", "servico_subtipo", "data_hora_agendamento"],
     },
   },
 
