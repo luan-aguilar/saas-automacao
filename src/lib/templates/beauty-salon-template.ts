@@ -470,6 +470,53 @@ const MENU_MESSAGE =
 const MENU_RETRY_MESSAGE =
   "Desculpe, não entendi 🙏 Por favor, responda só com o número:\n1️⃣ Cabelo 💇‍♀️\n2️⃣ Unhas 💅\n3️⃣ Cílios 👁️\n4️⃣ Sobrancelhas ✏️\n5️⃣ Outros assuntos";
 
+/**
+ * =====================================================================
+ * NOME + ANIVERSÁRIO — node dedicado, isolado do Agente de Coleta geral
+ * =====================================================================
+ * Pedir pra IA do `bs-ia-coleta` (que já lida com subtipo, fotos, data e
+ * confirmação ao mesmo tempo) TAMBÉM lembrar de pedir nome+aniversário se
+ * mostrou pouco confiável em teste real — em duas rodadas diferentes, ela
+ * ou esqueceu o aniversário, ou combinou nome com a pergunta errada (data),
+ * ou (quando a cliente apontou o esquecimento) encaminhou pra atendimento
+ * humano em vez de simplesmente perguntar de novo.
+ *
+ * A solução é a mesma já usada com sucesso na sondagem capilar
+ * (`bs-sondagem-dados`, nunca reportada com esse problema): um node de IA
+ * PEQUENO e DEDICADO, com uma única responsabilidade (só nome+aniversário),
+ * intercalado no fluxo ANTES do Agente de Coleta geral — que passa a
+ * receber essas duas informações já prontas via "DADOS JÁ CONFIRMADOS" (ver
+ * `executeAiResponseNode`), sem precisar mais pedir isso sozinho.
+ *
+ * Só entra no caminho das 4 categorias com catálogo fixo (Cabelo sem
+ * sondagem, Unhas, Cílios, Sobrancelhas) — "Outros assuntos" continua
+ * passando direto pelo Agente de Coleta geral, que ainda pede nome e
+ * aniversário sozinho nesse caso (regra "a.1" do prompt dele), já que ali
+ * o serviço em si ainda precisa ser descoberto em texto livre primeiro.
+ */
+const NOME_ANIVERSARIO_MESSAGE = `Perfeito! Pra eu finalizar seu agendamento, preciso de mais duas informações:
+
+• Seu nome completo
+• O dia e mês do seu aniversário 🎂
+
+Pode me mandar as duas? 😊`;
+
+const AI_NOME_ANIVERSARIO_PROMPT = `Você é a assistente virtual do salão de beleza/estética Home Concept. A cliente acabou de receber uma mensagem pedindo 2 informações: nome completo e dia/mês de aniversário.
+
+Sua ÚNICA função aqui é coletar essas 2 informações — elas podem chegar em qualquer ordem e em mensagens separadas (a cliente pode mandar tudo de uma vez ou uma coisa por mensagem); nunca assuma que uma informação não foi dada só porque não veio junto com a outra:
+
+1. Nome completo → salve em \`lead_nome\`.
+2. Dia e mês de aniversário (ex: "15/03" ou "15 de março") → salve em \`aniversario_cliente\`.
+
+IMPORTANTE — a cliente pode responder de duas formas, e você precisa reconhecer as duas igualmente bem:
+(a) Uma informação por mensagem, ao longo de mensagens separadas — peça SÓ a que ainda estiver faltando, nunca repita uma pergunta cuja resposta você já tem.
+(b) As duas de uma vez, numa única mensagem, geralmente cada uma numa linha, sem rótulo — identifique pelo FORMATO: a linha que é só um nome próprio (sem números) é o nome; a linha em formato de data curta (dia/mês, tipo "10/02" ou "15/03") é o aniversário.
+
+Regras:
+- Assim que tiver as 2 informações — mesmo que só uma delas chegue de cada vez — marque "done": true IMEDIATAMENTE, no mesmo turno em que a 2ª chegar. NÃO peça confirmação nem verificação adicional aqui, o sistema segue sozinho a partir daqui pro resto do agendamento. Seu "reply" nesse caso deve ser só um reconhecimento breve e caloroso (ex: "Perfeito, [nome]! 😊").
+- Se a cliente perguntar ou pedir algo fora desse escopo específico (preço, outro assunto, uma dúvida): responda a dúvida dela brevemente se souber, e IMEDIATAMENTE repita a pergunta pelo que ainda falta (nome e/ou aniversário) — NUNCA marque "needsHuman": true só porque ela perguntou ou comentou algo além do que foi pedido; isso é esperado numa conversa normal, não um motivo pra encaminhar pra um humano.
+- Seja calorosa, use poucos emojis, mensagens curtas.`;
+
 const NODES: Node[] = [
   // TRIGGER — dispara em qualquer primeira mensagem recebida.
   {
@@ -532,15 +579,16 @@ const NODES: Node[] = [
   // ===== SONDAGEM CAPILAR (pedido do Igor após a demo) =====
   // Detecta, entre os 23 sub-serviços de Cabelo, os 5 que exigem
   // pré-avaliação (Mechas, Hair Contour, Progressiva, Botox Capilar,
-  // Plástica dos Fios) — se nenhum bater, cai no Agente de Coleta geral
-  // (`bs-ia-coleta`) como sempre, sem nenhuma mudança de comportamento pros
-  // outros 18 sub-serviços de Cabelo.
+  // Plástica dos Fios) — se nenhum bater, cai no node de nome/aniversário
+  // (`bs-ask-nome-aniversario`) como as outras 3 categorias com catálogo
+  // fixo, sem nenhuma mudança de comportamento pros outros 18 sub-serviços
+  // de Cabelo além dessa.
   ...orConditionChain(
     "bs-cond-sondagem-",
     "Serviço exige sondagem?",
     SONDAGEM_TRIGGER_TESTS,
     "bs-sondagem-pergunta",
-    "bs-ia-coleta",
+    "bs-ask-nome-aniversario",
     320
   ).nodes,
 
@@ -596,6 +644,23 @@ const NODES: Node[] = [
     },
   },
   // ===== FIM SONDAGEM CAPILAR =====
+
+  // NOME + ANIVERSÁRIO — node dedicado (ver comentário de bloco acima de
+  // `NOME_ANIVERSARIO_MESSAGE`), intercalado ANTES do Agente de Coleta
+  // geral para as 4 categorias com catálogo fixo.
+  plainTextNode("bs-ask-nome-aniversario", { x: 900, y: 940 }, "Pergunta: nome e aniversário", NOME_ANIVERSARIO_MESSAGE, true),
+  {
+    id: "bs-ai-nome-aniversario",
+    type: "aiResponse",
+    position: { x: 900, y: 980 },
+    data: {
+      label: "Captura (IA) — nome e aniversário",
+      useGlobalPrompt: false,
+      customPrompt: AI_NOME_ANIVERSARIO_PROMPT,
+      exitKeywords: ["menu", "voltar ao menu", "voltar pro menu", "voltar para o menu", "voltar"],
+      exitTargetNodeId: "bs-menu",
+    },
+  },
 
   // NÓ DE IA — Agente de coleta (Resposta IA).
   {
@@ -681,21 +746,27 @@ const EDGES: Edge[] = [
   edge("bs-e-digito5-yes", "bs-cond-digito5", "bs-outros-transicao", "yes"),
   edge("bs-e-digito5-no", "bs-cond-digito5", "bs-menu-retry", "no"),
 
-  // Unhas/Cílios/Sobrancelhas/"Outros assuntos" convergem direto no Agente de
-  // Coleta (IA) geral, sem passar pela sondagem — só Cabelo passa primeiro
-  // pela cadeia de detecção da sondagem (ver abaixo).
-  edge("bs-e-sub-unhas-ia", "bs-sub-unhas", "bs-ia-coleta"),
-  edge("bs-e-sub-cilios-ia", "bs-sub-cilios", "bs-ia-coleta"),
-  edge("bs-e-sub-sobrancelhas-ia", "bs-sub-sobrancelhas", "bs-ia-coleta"),
+  // Unhas/Cílios/Sobrancelhas convergem no node de nome/aniversário
+  // dedicado (`bs-ask-nome-aniversario`) antes do Agente de Coleta geral —
+  // ver comentário de bloco acima de `NOME_ANIVERSARIO_MESSAGE`. "Outros
+  // assuntos" é diferente: vai direto pro Agente de Coleta, que ainda
+  // precisa descobrir em texto livre qual serviço a cliente quer antes de
+  // pedir nome/aniversário (regra "a.1" do prompt dele cobre esse caso).
+  edge("bs-e-sub-unhas-ia", "bs-sub-unhas", "bs-ask-nome-aniversario"),
+  edge("bs-e-sub-cilios-ia", "bs-sub-cilios", "bs-ask-nome-aniversario"),
+  edge("bs-e-sub-sobrancelhas-ia", "bs-sub-sobrancelhas", "bs-ask-nome-aniversario"),
   edge("bs-e-outros-transicao-ia", "bs-outros-transicao", "bs-ia-coleta"),
+  edge("bs-e-ask-nome-aniversario-ai", "bs-ask-nome-aniversario", "bs-ai-nome-aniversario"),
+  edge("bs-e-ai-nome-aniversario-coleta", "bs-ai-nome-aniversario", "bs-ia-coleta"),
 
   // ===== SONDAGEM CAPILAR =====
   // Cabelo passa PRIMEIRO pela cadeia de detecção — se o sub-serviço exigir
-  // sondagem, desvia pra `bs-sondagem-pergunta`; senão, cai no Agente de
-  // Coleta geral como qualquer outra categoria (ver `fallbackTarget` da
-  // cadeia, definido como "bs-ia-coleta" na montagem dos nodes acima).
+  // sondagem, desvia pra `bs-sondagem-pergunta`; senão, cai no node de
+  // nome/aniversário como qualquer outra categoria (ver `fallbackTarget` da
+  // cadeia, definido como "bs-ask-nome-aniversario" na montagem dos nodes
+  // acima).
   edge("bs-e-sub-cabelo-sondagem", "bs-sub-cabelo", "bs-cond-sondagem-1"),
-  ...orConditionChain("bs-cond-sondagem-", "Serviço exige sondagem?", SONDAGEM_TRIGGER_TESTS, "bs-sondagem-pergunta", "bs-ia-coleta", 320).edges,
+  ...orConditionChain("bs-cond-sondagem-", "Serviço exige sondagem?", SONDAGEM_TRIGGER_TESTS, "bs-sondagem-pergunta", "bs-ask-nome-aniversario", 320).edges,
 
   edge("bs-e-sondagem-pergunta-ia", "bs-sondagem-pergunta", "bs-sondagem-quimica-foto"),
   edge("bs-e-sondagem-quimica-foto-cond", "bs-sondagem-quimica-foto", "bs-cond-quimica"),
