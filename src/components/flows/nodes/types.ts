@@ -35,6 +35,14 @@ export type AiResponseData = {
    * dia/horário do AGENDAMENTO.
    */
   resolveDateReferences?: boolean;
+  /**
+   * Se true, o motor tenta resolver por código (ver `resolveNomeAniversarioPair`
+   * em `flow-helpers.ts`) o caso em que a resposta MAIS RECENTE do contato
+   * for exatamente duas linhas — nome numa, aniversário na outra — e injeta
+   * o resultado como uma dica pronta no prompt. Ligue só em nodes cuja
+   * ÚNICA pergunta em aberto é nome + aniversário.
+   */
+  resolveNomeAniversario?: boolean;
 };
 
 /** Tipo de mensagem interativa: botões simples (até 3) ou lista (até 10 itens). */

@@ -786,6 +786,10 @@ const NODES: Node[] = [
       customPrompt: AI_NOME_ANIVERSARIO_PROMPT,
       exitKeywords: ["menu", "voltar ao menu", "voltar pro menu", "voltar para o menu", "voltar"],
       exitTargetNodeId: "bs-menu",
+      // Único node cuja ÚNICA pergunta em aberto é nome+aniversário — seguro
+      // ligar a resolução automática do formato "nome numa linha, aniversário
+      // na outra", ver `resolveNomeAniversario` em types.ts.
+      resolveNomeAniversario: true,
     },
   },
 

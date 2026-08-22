@@ -36,7 +36,7 @@ import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/encryption";
 import { sendWhatsappMessage, sendWhatsappButtons, sendWhatsappList } from "@/lib/whatsapp-service";
 import { findAvailableSlots, createCalendarEvent, appendSheetRow } from "@/lib/google-api";
-import { emojiNumber, resolveNumberedListChoice, analyzeDateReference } from "@/lib/templates/flow-helpers";
+import { emojiNumber, resolveNumberedListChoice, analyzeDateReference, resolveNomeAniversarioPair } from "@/lib/templates/flow-helpers";
 
 export type FlowContext = {
   /** ID do usuário (tenant) dono do fluxo — usado para saber qual sessão do WhatsApp usar */
@@ -269,7 +269,20 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
     dateReferenceHint = `\n\nRESOLUÇÃO AUTOMÁTICA DE DATA: NÃO PASSOU. O dia exato que a cliente quis dizer é ${dateReference.weekday}, dia ${dateReference.formatted} — já calculado por código a partir de hoje (${context.variables.data_atual}), não recalcule nem troque por outro dia. Se isso completa a informação de dia/horário que faltava, PODE ACEITAR normalmente: preencha a variável de agendamento juntando esse dia calculado com o HORÁRIO REAL que a cliente mencionou na mensagem dela (o horário que ela de fato escreveu, nunca um valor inventado ou um texto de exemplo). Na sua resposta, confirme os dois de volta pra cliente de forma natural: o dia exato calculado acima E o horário real que ela informou — isso é obrigatório sempre que ela citar um dia da semana ou uma data, pra ela poder conferir se entendeu certo.`;
   }
 
-  const userContent = `Histórico da conversa até agora (linhas "Cliente:" são mensagens do contato, linhas "Assistente:" são mensagens já enviadas a ele — inclusive por blocos estáticos do fluxo, não só por você):\n${history}${knownVariablesBlock}${numberedChoiceHint}${dateReferenceHint}`;
+  // Se a resposta mais recente do contato for exatamente "nome numa linha,
+  // aniversário na outra" (o formato mais comum quando a cliente manda as
+  // duas informações juntas), resolve por CÓDIGO qual linha é qual — em
+  // teste ao vivo, assim que este prompt passou a receber OUTRAS variáveis
+  // já confirmadas (ex: `servico_categoria`) no bloco "DADOS JÁ CONFIRMADOS",
+  // o modelo passou a hesitar e pedir confirmação em vez de extrair direto,
+  // mesmo com as duas informações claramente visíveis na mensagem — ver
+  // `resolveNomeAniversarioPair`.
+  const nomeAniversarioPair = data.resolveNomeAniversario ? resolveNomeAniversarioPair(context.incomingText ?? "") : null;
+  const nomeAniversarioHint = nomeAniversarioPair
+    ? `\n\nRESOLUÇÃO AUTOMÁTICA DE NOME+ANIVERSÁRIO: a mensagem mais recente da cliente já foi separada por código — nome: "${nomeAniversarioPair.nome}", aniversário: "${nomeAniversarioPair.aniversario}". Use esses dois valores exatos, não precisa reinterpretar. Se essas forem as duas únicas informações que faltavam, marque "done": true IMEDIATAMENTE neste turno, sem pedir confirmação.`
+    : "";
+
+  const userContent = `Histórico da conversa até agora (linhas "Cliente:" são mensagens do contato, linhas "Assistente:" são mensagens já enviadas a ele — inclusive por blocos estáticos do fluxo, não só por você):\n${history}${knownVariablesBlock}${numberedChoiceHint}${dateReferenceHint}${nomeAniversarioHint}`;
 
   const client = new OpenAI({ apiKey });
 

@@ -241,3 +241,48 @@ export function analyzeDateReference(text: string, dataAtualDDMMYYYY: string): D
 
   return null;
 }
+
+const BIRTHDAY_LINE_RE = /^\d{1,2}\s*(\/|de)\s*[\p{L}\d]+(\s*(\/|de)\s*\d{2,4})?$/iu;
+
+/**
+ * Se o texto for EXATAMENTE duas linhas — uma parecendo um nome (sem
+ * dígitos) e outra parecendo uma data curta de aniversário (ex: "10/02" ou
+ * "10 de fevereiro", sem exigir o ano) — resolve por código qual linha é
+ * qual e devolve os dois já separados.
+ *
+ * Existe porque, em teste ao vivo, o node dedicado de nome+aniversário
+ * (`bs-ai-nome-aniversario`) errou essa extração na maioria das tentativas
+ * assim que o prompt passou a incluir OUTRAS variáveis já confirmadas
+ * (`servico_categoria`/`servico_subtipo`) no bloco "DADOS JÁ CONFIRMADOS" —
+ * a presença de dados irrelevantes pro que está sendo pedido parece
+ * "distrair" o modelo o suficiente pra ele hesitar e pedir confirmação em
+ * vez de extrair direto, mesmo com os dois valores corretos já visíveis na
+ * própria mensagem da cliente. Resolver esse formato específico (o mais
+ * comum, cliente manda as duas linhas juntas) por código e entregar pronto
+ * pro prompt elimina essa fonte de hesitação — mesmo princípio já usado pra
+ * listas numeradas e datas.
+ *
+ * Devolve null se o texto não tiver exatamente esse formato de duas linhas
+ * claramente distintas (nesse caso a IA continua responsável por
+ * interpretar normalmente — ex: as duas informações vindo em mensagens
+ * separadas, ou um formato mais livre).
+ */
+export function resolveNomeAniversarioPair(text: string): { nome: string; aniversario: string } | null {
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (lines.length !== 2) return null;
+
+  const [first, second] = lines;
+  const firstIsBirthday = BIRTHDAY_LINE_RE.test(first);
+  const secondIsBirthday = BIRTHDAY_LINE_RE.test(second);
+
+  if (firstIsBirthday && !secondIsBirthday && !/\d/.test(second)) {
+    return { nome: second, aniversario: first };
+  }
+  if (secondIsBirthday && !firstIsBirthday && !/\d/.test(first)) {
+    return { nome: first, aniversario: second };
+  }
+  return null;
+}
