@@ -350,7 +350,15 @@ export function holidayName(date: Date): string | null {
   return null;
 }
 
-const TIME_RE = /\b(?:às|as)\s*(\d{1,2})(?::(\d{2}))?\s*h?(?:oras|rs)?\b|\b(\d{1,2}):(\d{2})\b|\b(\d{1,2})\s*h(?:oras|rs)?\b/i;
+// A alternativa "às/as ..." usa lookbehind/lookahead em vez de `\b`: `\b` no
+// JS é baseado em `\w` (ASCII apenas), então NÃO reconhece "à" como
+// caractere de palavra — `\bàs\b` nunca dá match, o que fazia essa
+// alternativa inteira falhar silenciosamente sempre que não houvesse um "h"
+// sobrando pra outra alternativa pegar (ex: "Terça às 9" nunca extraía
+// horário nenhum, só "Terça às 9h" funcionava por acidente, via a
+// alternativa de "\d+h").
+const TIME_RE =
+  /(?<![\p{L}\p{N}])(?:às|as)\s*(\d{1,2})(?::(\d{2}))?\s*h?(?:oras|rs)?(?![\p{L}\p{N}])|\b(\d{1,2}):(\d{2})\b|\b(\d{1,2})\s*h(?:oras|rs)?\b/iu;
 
 /** Extrai um horário (ex: "às 8", "20h", "9:30", "8 hrs") do texto — devolve null se nenhum padrão reconhecível de horário aparecer. */
 export function extractTime(text: string): { hour: number; minute: number } | null {

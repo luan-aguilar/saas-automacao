@@ -52,6 +52,16 @@ export type AiResponseData = {
    */
   businessHours?: { openDays: number[]; openHour: number; closeHour: number };
   /**
+   * Versão "segura" de validação de horário — só extrai e valida o HORÁRIO
+   * mencionado (ver `extractTime` em `flow-helpers.ts`), nunca tenta casar
+   * uma data. Ao contrário de `resolveDateReferences`, pode ser ligado em
+   * nodes que também coletam outros campos no formato DD/MM (ex:
+   * aniversário) no mesmo node, já que um horário (ex: "às 9", "20h") nunca
+   * é confundível com uma data curta desse formato. Usa `businessHours`
+   * pros limites.
+   */
+  resolveTimeReferences?: boolean;
+  /**
    * Lista de variáveis que precisam TODAS já estar confirmadas antes da
    * validação de dia/horário (`resolveDateReferences`/`businessHours`)
    * entrar em ação neste node. Existe pra nodes multi-propósito (ex: o

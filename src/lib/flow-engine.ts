@@ -41,6 +41,7 @@ import {
   resolveNumberedListChoice,
   analyzeDateReference,
   checkScheduleRequest,
+  extractTime,
   resolveNomeAniversarioPair,
   isExplicitConfirmation,
 } from "@/lib/templates/flow-helpers";
@@ -358,6 +359,26 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
     }
   }
 
+  // Versão "segura" da validação de horário — só extrai e checa o HORÁRIO
+  // (nunca tenta casar uma data), pra nodes que também coletam outros
+  // campos no formato DD/MM (ex: aniversário) no mesmo node, onde
+  // `resolveDateReferences` completo arriscaria confundir um com o outro
+  // (ver `resolveTimeReferences` em types.ts). Em teste ao vivo, um
+  // horário válido dentro do expediente (ex: "às 9") foi rejeitado como
+  // "fora do horário" — a IA não deveria ter que julgar isso sozinha.
+  let timeReferenceHint = "";
+  if (data.resolveTimeReferences && data.businessHours) {
+    const time = extractTime(context.incomingText ?? "");
+    if (time) {
+      const outsideHours = time.hour < data.businessHours.openHour || time.hour > data.businessHours.closeHour || (time.hour === data.businessHours.closeHour && time.minute > 0);
+      const hh = String(time.hour).padStart(2, "0");
+      const mm = String(time.minute).padStart(2, "0");
+      timeReferenceHint = outsideHours
+        ? `\n\nRESOLUÇÃO AUTOMÁTICA DE HORÁRIO: FORA DO EXPEDIENTE. O horário que a cliente mencionou (${hh}:${mm}) está fora do funcionamento — já calculado por código, não questione. Rejeite esse horário (mantendo o resto do que ela já disse, se houver), sem marcar "done": true por causa disso.`
+        : `\n\nRESOLUÇÃO AUTOMÁTICA DE HORÁRIO: DENTRO DO EXPEDIENTE. O horário que a cliente mencionou (${hh}:${mm}) está dentro do funcionamento — já calculado por código, não questione nem rejeite esse horário.`;
+    }
+  }
+
   // Se a resposta mais recente do contato for exatamente "nome numa linha,
   // aniversário na outra" (o formato mais comum quando a cliente manda as
   // duas informações juntas), resolve por CÓDIGO qual linha é qual — em
@@ -382,7 +403,7 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
       ? `\n\nRESOLUÇÃO AUTOMÁTICA DE CONFIRMAÇÃO: a resposta mais recente da cliente ("${context.incomingText}") foi reconhecida como uma confirmação afirmativa clara. Se você tinha acabado de mostrar a confirmação dos dados e estava esperando a resposta dela, trate isso como um "sim" — não repita os dados, não peça confirmação de novo, e marque "done": true imediatamente.`
       : "";
 
-  const userContent = `Histórico da conversa até agora (linhas "Cliente:" são mensagens do contato, linhas "Assistente:" são mensagens já enviadas a ele — inclusive por blocos estáticos do fluxo, não só por você):\n${history}${knownVariablesBlock}${numberedChoiceHint}${dateAlreadyConfirmedHint}${dateReferenceHint}${nomeAniversarioHint}${confirmationHint}`;
+  const userContent = `Histórico da conversa até agora (linhas "Cliente:" são mensagens do contato, linhas "Assistente:" são mensagens já enviadas a ele — inclusive por blocos estáticos do fluxo, não só por você):\n${history}${knownVariablesBlock}${numberedChoiceHint}${dateAlreadyConfirmedHint}${dateReferenceHint}${timeReferenceHint}${nomeAniversarioHint}${confirmationHint}`;
 
   const client = new OpenAI({ apiKey });
 

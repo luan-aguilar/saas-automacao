@@ -480,7 +480,7 @@ Sua ÚNICA função aqui é coletar essas 3 informações — elas podem chegar 
    a. Data já passou? ESSA VERIFICAÇÃO SÓ SE APLICA A DATAS EXPLÍCITAS (ex: "20/08") — se a cliente disser SÓ o nome de um dia da semana (ex: "Sexta", "Terça"), sem nenhum número junto, isso NUNCA conta como "já passou": pule direto pra próxima verificação (item b), tratando o dia da semana citado como a próxima ocorrência futura dele, não como uma data já ocorrida. Só quando ela informar uma data específica com número (ex: "20/08"), compare com \`data_atual\` no bloco "DADOS JÁ CONFIRMADOS" (formato DD/MM/AAAA) — se essa data específica já passou, não aceite, avise gentilmente e peça nova data, sem marcar "done".
    b. É feriado nacional (Confraternização Universal 01/01, Tiradentes 21/04, Dia do Trabalho 01/05, Independência 07/09, Nossa Senhora Aparecida 12/10, Finados 02/11, Proclamação da República 15/11, Consciência Negra 20/11, Natal 25/12, além de Carnaval/Sexta-feira Santa/Corpus Christi)? Se for, responda EXATAMENTE: "Desculpe, mas não atendemos de feriado, domingo ou segunda, por favor escolha outro dia." — sem marcar "done".
    c. Cai em domingo ou segunda-feira? Se for, responda EXATAMENTE: "Desculpe, mas atendemos de terça a sábado, por favor escolha outro dia da semana." — sem marcar "done".
-   d. Se um horário específico for mencionado e estiver fora de 09:00–18:00, responda EXATAMENTE: "Desculpe, mas atendemos das 9hrs às 18hrs, por favor escolha outro horario." — sem marcar "done".
+   d. Horário dentro do expediente (09:00–18:00)? Se a mensagem mencionar um horário, você recebe uma dica pronta "RESOLUÇÃO AUTOMÁTICA DE HORÁRIO" — já calculada por código, NUNCA julgue isso sozinha. Se a dica disser FORA DO EXPEDIENTE, responda EXATAMENTE: "Desculpe, mas atendemos das 9hrs às 18hrs, por favor escolha outro horario." — sem marcar "done". Se a dica disser DENTRO DO EXPEDIENTE, aceite esse horário normalmente. Se não houver dica nenhuma (nenhum horário específico mencionado ainda), siga sem essa verificação.
    e. Se passou em todas as verificações, aceite normalmente.
 4. SEMPRE que preencher \`data_hora_agendamento\` pela primeira vez (ou seja, no MESMO turno em que a coleta fica completa e "done" vira true), preencha TAMBÉM \`resumo_ia\` nesse mesmo JSON — nunca deixe pra depois. Um resumo curto (1 frase), citando o sub-serviço (está no início do histórico da conversa, ex: "Cliente: Mechas") e se possui resíduo de química (está no histórico também). Exemplo de valor: "Cliente interessada em Mechas, possui resíduo de química, avaliação presencial." — obrigatório, não pule este campo.
 
@@ -779,6 +779,14 @@ const NODES: Node[] = [
       // distinguir "10/02" (aniversário, nunca deve ser validado) de
       // "sexta" (dia do agendamento, deveria) se os dois vierem juntos.
       // Fica por conta do prompt (ponto 3 de `AI_SONDAGEM_DADOS_PROMPT`).
+      //
+      // `resolveTimeReferences`, ao contrário, É seguro ligar aqui mesmo
+      // coletando aniversário no mesmo node: um horário (ex: "às 9") nunca
+      // é confundível com uma data curta DD/MM — em teste ao vivo, um
+      // horário válido (9h) foi rejeitado como "fora do horário" sem essa
+      // ajuda, a IA não deveria julgar isso sozinha.
+      resolveTimeReferences: true,
+      businessHours: { openDays: [2, 3, 4, 5, 6], openHour: 9, closeHour: 18 },
       // Regra de "uma única mensagem por resposta do cliente" — o próximo
       // node (bs-handoff-humano) já manda a mensagem final.
       suppressReplyOnDone: true,
