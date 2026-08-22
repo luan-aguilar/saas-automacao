@@ -861,7 +861,15 @@ async function runFlowForContact(params: {
         Object.assign(variables, node.data.setVariables);
       }
       if (node.data.captureLastReplyInto && variables.ultima_resposta) {
-        variables[node.data.captureLastReplyInto] = variables.ultima_resposta;
+        // Se a resposta for um número puro e a última mensagem enviada ao
+        // contato (registrada em `_ai_history` alguns milissegundos atrás,
+        // logo acima) tinha uma lista numerada, resolve o item EXATO por
+        // código em vez de guardar só o dígito bruto (ex: "3") — mesmo
+        // princípio e mesma função usada pelo node de IA (ver
+        // `resolveNumberedListChoice`), aplicado aqui porque essa captura
+        // roda de forma 100% determinística, sem IA nenhuma envolvida.
+        const resolved = resolveNumberedListChoice(variables._ai_history ?? "", variables.ultima_resposta);
+        variables[node.data.captureLastReplyInto] = resolved ?? variables.ultima_resposta;
       }
     }
 

@@ -51,21 +51,44 @@
  *    não precisa mais mandar uma saudação genérica logo em seguida
  *    ("Oi! Que bom ter você aqui...") duplicando mensagem.
  *
- * 3) NÓ DE IA (`bs-ia-coleta`) — assume a conversa em texto corrido já com a
- *    resposta real da cliente em mãos (ou, se ela escolheu "Outros
- *    assuntos", sem nenhum catálogo prévio — nesse caso específico a IA
- *    ainda precisa cumprimentar e perguntar como ajudar, é o único cenário
- *    em que isso faz sentido). O `customPrompt` (constante
+ * 3) CAPTURA DETERMINÍSTICA DE CATEGORIA/SUBTIPO (`bs-confirma-*`) — logo
+ *    após o catálogo, um node ESTÁTICO (sem IA) por categoria confirma
+ *    brevemente a escolha e grava `servico_categoria` (fixo) e
+ *    `servico_subtipo` (resolvido por código a partir do número respondido —
+ *    ver `resolveNumberedListChoice`/`captureLastReplyInto`). Isso só é
+ *    confiável no turno IMEDIATAMENTE seguinte ao catálogo, por isso não dá
+ *    pra adiar essa captura pro Agente de Coleta geral, que só roda bem mais
+ *    tarde na conversa.
+ *
+ * 4) NOME/ANIVERSÁRIO E DIA/HORÁRIO (`bs-ask-nome-aniversario` /
+ *    `bs-ai-nome-aniversario` / `bs-ask-data-horario` / `bs-ai-data-horario`)
+ *    — dois pares de node estático (pergunta com texto FIXO, garantindo que
+ *    o horário de funcionamento seja sempre mencionado) + node de IA dedicado
+ *    (só aquela captura específica), em sequência, também antes do Agente de
+ *    Coleta geral. Ver comentário de bloco acima de `NOME_ANIVERSARIO_MESSAGE`
+ *    pro histórico de por que isso não pode ser responsabilidade só do prompt
+ *    de um node de IA genérico.
+ *
+ * 5) NÓ DE IA (`bs-ia-coleta`) — quando vem das 4 categorias com catálogo,
+ *    chega aqui com categoria/subtipo/nome/aniversário/dia já prontos (via
+ *    "DADOS JÁ CONFIRMADOS"), e só precisa cuidar de fotos (quando aplicável
+ *    a Cabelo) e da confirmação final. Se a cliente escolheu "Outros
+ *    assuntos" (sem catálogo prévio), assume a conversa inteira sozinho,
+ *    inclusive cumprimentando e perguntando o que ela procura — é o único
+ *    cenário em que isso faz sentido. O `customPrompt` (constante
  *    `AI_COLLECTION_PROMPT`) mantém o catálogo completo das 4 categorias
- *    (para validar o que a cliente digitar) e as regras de interação
- *    (múltiplos serviços, coleta de fotos, confirmação obrigatória antes do
- *    alerta final).
+ *    (para validar o que a cliente digitar nesse caminho) e as regras de
+ *    interação (múltiplos serviços, coleta de fotos, confirmação obrigatória
+ *    antes do alerta final).
  *
  * TRIGGER (primeira mensagem)
  *   -> Menu (1-Cabelo | 2-Unhas | 3-Cílios | 4-Sobrancelhas | 5-Outros assuntos)
  *        -> [Outros assuntos] IA (sem catálogo prévio — cumprimenta e pergunta)
  *        -> [Cabelo/Unhas/Cílios/Sobrancelhas] Sub-serviços (texto numerado,
- *           pausa esperando resposta) -> IA (já com a resposta real da cliente)
+ *           pausa esperando resposta) -> confirma categoria/subtipo (estático,
+ *           determinístico) -> nome+aniversário (estático + IA) -> dia/horário
+ *           (estático + IA, horário sempre citado) -> IA (Agente de coleta,
+ *           só fotos + confirmação final, já com tudo mais pronto)
  *   -> IA (Agente de coleta, texto corrido) -> Notificação de lead qualificado
  *
  * O roteamento usa blocos de Condição (`condition`) avaliando a variável
@@ -203,6 +226,8 @@ function subServiceMessage(categoryLabel: string, category: keyof typeof SUB_SER
  */
 const AI_COLLECTION_PROMPT = `Você é a assistente virtual do salão de beleza/estética Home Concept. A cliente já recebeu uma mensagem anterior — o catálogo numerado da categoria escolhida (Cabelo, Unhas, Cílios ou Sobrancelhas), ou um convite genérico caso ela tenha escolhido "Outros assuntos" — e a mensagem mais recente dela JÁ É a resposta real, dizendo o que ela quer. NÃO cumprimente nem pergunte de novo o que ela quer — confirme rapidamente o que ela disse e siga direto para a coleta das próximas informações (regras abaixo).
 
+IMPORTANTE — confira SEMPRE o bloco "DADOS JÁ CONFIRMADOS" antes de perguntar qualquer coisa: se ele já tiver \`servico_categoria\`, \`servico_subtipo\`, \`lead_nome\`, \`aniversario_cliente\` e/ou \`data_hora_agendamento\` preenchidos (isso acontece quando a cliente veio de Cabelo, Unhas, Cílios ou Sobrancelhas — essas 4 categorias já coletam tudo isso automaticamente ANTES de chegar até você), NÃO pergunte de novo por nenhum desses campos — já use os valores prontos. Você só precisa perguntar por esses campos quando eles NÃO estiverem em "DADOS JÁ CONFIRMADOS" (isso só acontece no caminho "Outros assuntos", onde o serviço em si ainda não foi identificado antes de chegar até você).
+
 A partir daqui, você assume a conversa inteiramente por texto corrido e conduz toda a coleta de informações necessárias para o agendamento.
 
 =====================================================
@@ -231,15 +256,18 @@ REGRAS DE INTERAÇÃO (seja resiliente e à prova de erros — a cliente pode re
 =====================================================
 
 a) Múltiplos serviços:
-Entenda se a cliente deseja agendar mais de um serviço (ex: "Quero fazer Corte e Manicure") e registre todos os serviços/subtipos mencionados, mesmo que sejam de categorias diferentes.
+Isso só se aplica ao caminho "Outros assuntos" — nas 4 categorias com catálogo, \`servico_categoria\`/\`servico_subtipo\` já chegam prontos em "DADOS JÁ CONFIRMADOS" (um único serviço, já resolvido por código a partir do catálogo numerado), não pergunte nem tente reinterpretar. Quando o serviço ainda não estiver definido: entenda se a cliente deseja agendar mais de um serviço (ex: "Quero fazer Corte e Manicure") e registre todos os serviços/subtipos mencionados, mesmo que sejam de categorias diferentes.
 
-a.1) Nome completo E aniversário — SEMPRE pergunte OS DOIS JUNTOS, na MESMA mensagem, nunca assuma (IMPORTANTE):
-O sistema NUNCA pré-preenche o nome da cliente a partir do perfil do WhatsApp — mesmo que o histórico mostre um nome de contato/perfil em algum lugar, isso NÃO conta como confirmado. Essas duas informações são igualmente obrigatórias e devem ser pedidas SEMPRE JUNTAS, numa única pergunta, pra qualquer categoria de serviço (não só Cabelo) — NUNCA pergunte só o nome e deixe o aniversário pra depois, mesmo que pareça mais natural perguntar uma coisa de cada vez. Use exatamente esta pergunta (ou uma variação bem próxima, mas SEMPRE cobrindo as duas coisas na mesma mensagem): "Perfeito! Pra eu finalizar o agendamento, qual é o seu nome completo e o dia/mês do seu aniversário? 🎂"
+a.1) Nome completo E aniversário — SE ainda não estiverem em "DADOS JÁ CONFIRMADOS", pergunte OS DOIS JUNTOS, na MESMA mensagem, nunca assuma (IMPORTANTE):
+Isso só se aplica ao caminho "Outros assuntos" — nas 4 categorias com catálogo (Cabelo, Unhas, Cílios, Sobrancelhas) essas duas informações JÁ chegam prontas em "DADOS JÁ CONFIRMADOS", não pergunte de novo. Quando precisar perguntar: o sistema NUNCA pré-preenche o nome da cliente a partir do perfil do WhatsApp — mesmo que o histórico mostre um nome de contato/perfil em algum lugar, isso NÃO conta como confirmado. Essas duas informações são igualmente obrigatórias e devem ser pedidas SEMPRE JUNTAS, numa única pergunta — NUNCA pergunte só o nome e deixe o aniversário pra depois, mesmo que pareça mais natural perguntar uma coisa de cada vez. Use exatamente esta pergunta (ou uma variação bem próxima, mas SEMPRE cobrindo as duas coisas na mesma mensagem): "Perfeito! Pra eu finalizar o agendamento, qual é o seu nome completo e o dia/mês do seu aniversário? 🎂"
 - Salve o nome em \`lead_nome\` e o aniversário (dia e mês, no formato que ela informar, ex: "15/03" ou "15 de março") em \`aniversario_cliente\`.
 - Se a cliente responder só uma das duas (ex: só o nome), NÃO prossiga nem mostre a confirmação (regra "e") — agradeça o que ela já disse e pergunte especificamente pela informação que ainda falta (ex: "Obrigada, [nome]! E o dia/mês do seu aniversário? 🎂"). Repita isso quantas vezes for preciso até ter as duas.
 - Nunca marque "done": true, e nunca mostre a mensagem de confirmação da regra "e", enquanto \`lead_nome\` OU \`aniversario_cliente\` ainda estiverem faltando — os dois são obrigatórios, não opcionais.
 
-a.2) Validação da data do agendamento — NUNCA aceite uma data que já passou (IMPORTANTE):
+a.2) Dia e horário do agendamento — SE ainda não estiver em "DADOS JÁ CONFIRMADOS" (\`data_hora_agendamento\`), pergunte (só acontece no caminho "Outros assuntos" — nas 4 categorias com catálogo essa informação já chega pronta):
+Toda vez que você perguntar a preferência de dia/horário pela primeira vez, SEMPRE inclua explicitamente o horário de funcionamento na própria pergunta — nunca pergunte só "qual dia e horário você prefere?" sem citar o horário. Use algo como: "Qual dia e horário você prefere para o agendamento? Atendemos ${SALON_HOURS}. 😊" — isso é obrigatório em toda pergunta de dia/horário, não é opcional nem depende do serviço escolhido.
+
+Validação da data — NUNCA aceite uma data que já passou (IMPORTANTE):
 Você recebe a data de hoje no bloco "DADOS JÁ CONFIRMADOS" (chave \`data_atual\`, formato DD/MM/AAAA). Toda vez que a cliente informar um dia para o agendamento, compare com \`data_atual\` antes de aceitar:
 - Se ela disser só o dia do mês (ex: "dia 20"), sem mês explícito, assuma o mês de \`data_atual\`. Se esse dia já passou (é menor que o dia de hoje, mesmo mês), essa data já ocorreu — NÃO aceite. Exemplo: se \`data_atual\` é 22/08 e ela disser "dia 20", isso já passou (20 é antes de 22) — não é dia 20 do mês que vem, é uma data que já foi.
 - Se ela disser uma data completa (ex: "20/08" ou "20/08/2026") anterior a \`data_atual\`, mesma coisa: já passou, não aceite.
@@ -270,7 +298,7 @@ Toda vez que você apresentar uma lista de opções para a cliente escolher — 
 Emojis de cada dígito (0 a 9): 0️⃣ 1️⃣ 2️⃣ 3️⃣ 4️⃣ 5️⃣ 6️⃣ 7️⃣ 8️⃣ 9️⃣. Para números de dois dígitos (10 em diante, ex: a lista de Cabelo tem 23 itens), não existe um emoji único — junte o emoji de cada dígito sem espaço entre eles: 10 = "1️⃣0️⃣", 23 = "2️⃣3️⃣". NUNCA use "1.", "2)", "-" ou qualquer outro estilo de marcador em vez do emoji, e NUNCA liste várias opções em um parágrafo corrido separado por vírgulas — no WhatsApp isso vira um bloco de texto gigante e ilegível pelo celular. Isso vale mesmo que o catálogo desta mensagem esteja escrito em vírgulas — a formatação de vírgulas aqui é só para você consultar, não para copiar no formato de resposta.
 
 e) Confirmação obrigatória dos dados:
-ANTES de exibir esta mensagem, confira se TODOS os 4 campos abaixo (Nome, Aniversário, Serviço, Dia/Horário) já foram informados pela cliente — se \`lead_nome\` OU \`aniversario_cliente\` ainda estiverem vazios, NÃO mostre esta confirmação ainda: volte pra regra "a.1" e pergunte o que falta primeiro. Só com os 4 campos preenchidos você DEVE exibir esta mensagem de confirmação (preenchendo os colchetes com os dados já coletados) e aguardar a resposta da cliente:
+ANTES de exibir esta mensagem, confira se TODOS os 5 campos abaixo (Nome, Aniversário, Categoria, Subtipo, Dia/Horário) já estão preenchidos — seja porque já vieram prontos em "DADOS JÁ CONFIRMADOS" (as 4 categorias com catálogo) ou porque você mesma coletou (caminho "Outros assuntos"). Se \`lead_nome\`, \`aniversario_cliente\`, \`servico_categoria\`, \`servico_subtipo\` ou \`data_hora_agendamento\` ainda estiverem vazios, NÃO mostre esta confirmação ainda: volte pras regras "a"/"a.1"/"a.2" e pergunte o que falta primeiro. Só com os 5 campos preenchidos você DEVE exibir esta mensagem de confirmação (preenchendo os colchetes com os dados já coletados) e aguardar a resposta da cliente:
 
 "Maravilhosa, podemos confirmar os dados do seu agendamento? 🤩
 
@@ -501,6 +529,34 @@ const NOME_ANIVERSARIO_MESSAGE = `Perfeito! Pra eu finalizar seu agendamento, pr
 
 Pode me mandar as duas? 😊`;
 
+/**
+ * =====================================================================
+ * CONFIRMAÇÃO DE CATEGORIA + CAPTURA DETERMINÍSTICA DE SUBTIPO
+ * =====================================================================
+ * Um node estático (sem IA) por categoria, inserido logo após o catálogo
+ * numerado (`bs-sub-*`) e ANTES do node de nome/aniversário. Duas razões
+ * pra existir:
+ *
+ * 1) `servico_categoria`/`servico_subtipo` precisam ser capturados NA HORA
+ *    CERTA: a captura determinística por número (`captureLastReplyInto` em
+ *    `flow-engine.ts`, que usa `resolveNumberedListChoice`) só é confiável
+ *    no turno IMEDIATAMENTE seguinte ao catálogo — é o único momento em que
+ *    a "última lista numerada mostrada" ainda é, de fato, aquele catálogo.
+ *    Se essa captura fosse adiada pro Agente de Coleta geral (`bs-ia-coleta`,
+ *    que só roda várias mensagens depois, após nome/aniversário/data),
+ *    ela reintroduziria exatamente o bug já corrigido antes (a IA "contando"
+ *    errado a posição de um item numa lista longa) — porque nesse ponto a
+ *    lista numerada relevante não é mais o último turno do histórico.
+ *
+ * 2) Usar um node ESTÁTICO (não um node de IA extra) pra essa captura evita
+ *    uma chamada de IA a mais só pra copiar um valor já determinístico —
+ *    mais rápido, mais barato, e sem nenhuma chance de a IA "reinterpretar"
+ *    o item escolhido.
+ */
+function categoriaConfirmMessage(categoryLabel: string): string {
+  return `Perfeito, você escolheu um serviço de ${categoryLabel}! 😊`;
+}
+
 const AI_NOME_ANIVERSARIO_PROMPT = `Você é a assistente virtual do salão de beleza/estética Home Concept. A cliente acabou de receber uma mensagem pedindo 2 informações: nome completo e dia/mês de aniversário.
 
 Sua ÚNICA função aqui é coletar essas 2 informações — elas podem chegar em qualquer ordem e em mensagens separadas (a cliente pode mandar tudo de uma vez ou uma coisa por mensagem); nunca assuma que uma informação não foi dada só porque não veio junto com a outra:
@@ -515,6 +571,42 @@ IMPORTANTE — a cliente pode responder de duas formas, e você precisa reconhec
 Regras:
 - Assim que tiver as 2 informações — mesmo que só uma delas chegue de cada vez — marque "done": true IMEDIATAMENTE, no mesmo turno em que a 2ª chegar. NÃO peça confirmação nem verificação adicional aqui, o sistema segue sozinho a partir daqui pro resto do agendamento. Seu "reply" nesse caso deve ser só um reconhecimento breve e caloroso (ex: "Perfeito, [nome]! 😊").
 - Se a cliente perguntar ou pedir algo fora desse escopo específico (preço, outro assunto, uma dúvida): responda a dúvida dela brevemente se souber, e IMEDIATAMENTE repita a pergunta pelo que ainda falta (nome e/ou aniversário) — NUNCA marque "needsHuman": true só porque ela perguntou ou comentou algo além do que foi pedido; isso é esperado numa conversa normal, não um motivo pra encaminhar pra um humano.
+- Seja calorosa, use poucos emojis, mensagens curtas.`;
+
+/**
+ * =====================================================================
+ * DIA/HORÁRIO DO AGENDAMENTO — node dedicado, com horário de funcionamento
+ * SEMPRE incluído no texto fixo
+ * =====================================================================
+ * Pedido explícito do Igor: os dias/horários de atendimento precisam ser
+ * informados à cliente TODA VEZ que ela escolhe um serviço, não só "às
+ * vezes" — antes, essa pergunta ficava por conta da IA do Agente de Coleta
+ * geral (`bs-ia-coleta`), que às vezes mencionava o horário e às vezes não,
+ * dependendo de como formulava a pergunta naquele turno. Resolvido do mesmo
+ * jeito que nome/aniversário: um texto FIXO (nunca gerado pela IA) logo após
+ * nome/aniversário, garantindo consistência de 100% das vezes pras 4
+ * categorias com catálogo fixo (Cabelo sem sondagem, Unhas, Cílios,
+ * Sobrancelhas). "Outros assuntos" continua com o Agente de Coleta geral
+ * perguntando isso sozinho (regra "a.2" do prompt dele), mas agora com
+ * instrução reforçada pra sempre citar o horário também nesse caso.
+ */
+const DATA_HORARIO_MESSAGE = `Show! Qual dia e horário você prefere para o agendamento? Atendemos ${SALON_HOURS}. 😊`;
+
+const AI_DATA_HORARIO_PROMPT = `Você é a assistente virtual do salão de beleza/estética Home Concept. A cliente acabou de receber uma mensagem perguntando sua preferência de dia e horário para o agendamento (funcionamento: ${SALON_HOURS}), e a mensagem mais recente dela é a resposta.
+
+Sua ÚNICA função aqui é capturar essa preferência em \`data_hora_agendamento\` (texto livre, do jeito que ela informar, ex: "Sábado de manhã" ou "20/08 às 14h").
+
+Validação da data — NUNCA aceite uma data que já passou (IMPORTANTE):
+Você recebe a data de hoje no bloco "DADOS JÁ CONFIRMADOS" (chave \`data_atual\`, formato DD/MM/AAAA). Toda vez que a cliente informar um dia para o agendamento, compare com \`data_atual\` antes de aceitar:
+- Se ela disser só o dia do mês (ex: "dia 20"), sem mês explícito, assuma o mês de \`data_atual\`. Se esse dia já passou (é menor que o dia de hoje, mesmo mês), essa data já ocorreu — NÃO aceite.
+- Se ela disser uma data completa (ex: "20/08" ou "20/08/2026") anterior a \`data_atual\`, mesma coisa: já passou, não aceite.
+- Nesses casos, NÃO preencha \`data_hora_agendamento\` com a data inválida — responda avisando gentilmente que essa data já passou (ex: "Só um detalhe: essa data já passou, hoje já é [data_atual]! 😊 Você quis dizer outro dia, ou prefere escolher uma nova data?") e aguarde uma data válida antes de prosseguir. Nunca marque "done": true com uma data passada.
+- Datas relativas (ex: "amanhã", "sábado que vem") ou só o nome de um dia da semana não precisam desse cálculo — são sempre futuras por definição, pode aceitar normalmente.
+
+Regras:
+- Assim que tiver uma data/horário válido (hoje em diante), marque "done": true IMEDIATAMENTE — "reply" deve ser só uma confirmação breve e calorosa (ex: "Perfeito! 😊"), sem fazer nenhuma pergunta nova (o próximo passo do sistema já cuida do resto).
+- IMPORTANTE: no MESMO JSON de resposta em que você marcar "done": true, o campo "variables" TEM que incluir \`data_hora_agendamento\` já preenchido com o valor aceito — nunca deixe esse campo de fora nesse turno, mesmo que o "reply" seja só uma confirmação breve. Marcar "done": true sem incluir a variável nesse mesmo turno é um erro.
+- Se a cliente perguntar ou comentar algo fora desse escopo (preço, outro assunto, uma dúvida): responda brevemente se souber, e repita o pedido pela data/horário. NUNCA marque "needsHuman": true só por isso.
 - Seja calorosa, use poucos emojis, mensagens curtas.`;
 
 const NODES: Node[] = [
@@ -588,7 +680,7 @@ const NODES: Node[] = [
     "Serviço exige sondagem?",
     SONDAGEM_TRIGGER_TESTS,
     "bs-sondagem-pergunta",
-    "bs-ask-nome-aniversario",
+    "bs-confirma-cabelo",
     320
   ).nodes,
 
@@ -645,18 +737,64 @@ const NODES: Node[] = [
   },
   // ===== FIM SONDAGEM CAPILAR =====
 
+  // CONFIRMAÇÃO DE CATEGORIA + CAPTURA DETERMINÍSTICA DE SUBTIPO (ver
+  // comentário de bloco acima de `categoriaConfirmMessage`) — um node
+  // estático por categoria, logo após o catálogo numerado, capturando
+  // `servico_categoria` (fixo) e `servico_subtipo` (resolvido por código a
+  // partir do número escolhido, via `captureLastReplyInto` em
+  // `flow-engine.ts`) enquanto a lista numerada ainda é o último turno do
+  // histórico — o único momento em que essa resolução é confiável.
+  plainTextNode("bs-confirma-cabelo", { x: 900, y: 900 }, "Confirma categoria — Cabelo", categoriaConfirmMessage("Cabelo"), false, false, {
+    setVariables: { servico_categoria: "Cabelo" },
+    captureLastReplyInto: "servico_subtipo",
+  }),
+  plainTextNode("bs-confirma-unhas", { x: 900, y: 920 }, "Confirma categoria — Unhas", categoriaConfirmMessage("Unhas"), false, false, {
+    setVariables: { servico_categoria: "Unhas" },
+    captureLastReplyInto: "servico_subtipo",
+  }),
+  plainTextNode("bs-confirma-cilios", { x: 900, y: 940 }, "Confirma categoria — Cílios", categoriaConfirmMessage("Cílios"), false, false, {
+    setVariables: { servico_categoria: "Cílios" },
+    captureLastReplyInto: "servico_subtipo",
+  }),
+  plainTextNode(
+    "bs-confirma-sobrancelhas",
+    { x: 900, y: 960 },
+    "Confirma categoria — Sobrancelhas",
+    categoriaConfirmMessage("Sobrancelhas"),
+    false,
+    false,
+    { setVariables: { servico_categoria: "Sobrancelhas" }, captureLastReplyInto: "servico_subtipo" }
+  ),
+
   // NOME + ANIVERSÁRIO — node dedicado (ver comentário de bloco acima de
   // `NOME_ANIVERSARIO_MESSAGE`), intercalado ANTES do Agente de Coleta
   // geral para as 4 categorias com catálogo fixo.
-  plainTextNode("bs-ask-nome-aniversario", { x: 900, y: 940 }, "Pergunta: nome e aniversário", NOME_ANIVERSARIO_MESSAGE, true),
+  plainTextNode("bs-ask-nome-aniversario", { x: 900, y: 980 }, "Pergunta: nome e aniversário", NOME_ANIVERSARIO_MESSAGE, true),
   {
     id: "bs-ai-nome-aniversario",
     type: "aiResponse",
-    position: { x: 900, y: 980 },
+    position: { x: 900, y: 1000 },
     data: {
       label: "Captura (IA) — nome e aniversário",
       useGlobalPrompt: false,
       customPrompt: AI_NOME_ANIVERSARIO_PROMPT,
+      exitKeywords: ["menu", "voltar ao menu", "voltar pro menu", "voltar para o menu", "voltar"],
+      exitTargetNodeId: "bs-menu",
+    },
+  },
+
+  // DIA/HORÁRIO — node dedicado (ver comentário de bloco acima de
+  // `DATA_HORARIO_MESSAGE`), com o horário de funcionamento SEMPRE incluído
+  // no texto fixo, pras 4 categorias com catálogo fixo.
+  plainTextNode("bs-ask-data-horario", { x: 900, y: 1010 }, "Pergunta: dia e horário", DATA_HORARIO_MESSAGE, true),
+  {
+    id: "bs-ai-data-horario",
+    type: "aiResponse",
+    position: { x: 900, y: 1015 },
+    data: {
+      label: "Captura (IA) — dia e horário",
+      useGlobalPrompt: false,
+      customPrompt: AI_DATA_HORARIO_PROMPT,
       exitKeywords: ["menu", "voltar ao menu", "voltar pro menu", "voltar para o menu", "voltar"],
       exitTargetNodeId: "bs-menu",
     },
@@ -746,27 +884,34 @@ const EDGES: Edge[] = [
   edge("bs-e-digito5-yes", "bs-cond-digito5", "bs-outros-transicao", "yes"),
   edge("bs-e-digito5-no", "bs-cond-digito5", "bs-menu-retry", "no"),
 
-  // Unhas/Cílios/Sobrancelhas convergem no node de nome/aniversário
-  // dedicado (`bs-ask-nome-aniversario`) antes do Agente de Coleta geral —
-  // ver comentário de bloco acima de `NOME_ANIVERSARIO_MESSAGE`. "Outros
-  // assuntos" é diferente: vai direto pro Agente de Coleta, que ainda
-  // precisa descobrir em texto livre qual serviço a cliente quer antes de
-  // pedir nome/aniversário (regra "a.1" do prompt dele cobre esse caso).
-  edge("bs-e-sub-unhas-ia", "bs-sub-unhas", "bs-ask-nome-aniversario"),
-  edge("bs-e-sub-cilios-ia", "bs-sub-cilios", "bs-ask-nome-aniversario"),
-  edge("bs-e-sub-sobrancelhas-ia", "bs-sub-sobrancelhas", "bs-ask-nome-aniversario"),
+  // Unhas/Cílios/Sobrancelhas passam primeiro pela confirmação de categoria
+  // + captura determinística de subtipo (`bs-confirma-*`, ver comentário de
+  // bloco acima de `categoriaConfirmMessage`), depois convergem no node de
+  // nome/aniversário dedicado e no de dia/horário dedicado, nessa ordem,
+  // antes do Agente de Coleta geral. "Outros assuntos" é diferente: vai
+  // direto pro Agente de Coleta, que ainda precisa descobrir em texto livre
+  // qual serviço a cliente quer antes de pedir nome/aniversário/data (regras
+  // "a.1"/"a.2" do prompt dele cobrem esse caso).
+  edge("bs-e-sub-unhas-ia", "bs-sub-unhas", "bs-confirma-unhas"),
+  edge("bs-e-sub-cilios-ia", "bs-sub-cilios", "bs-confirma-cilios"),
+  edge("bs-e-sub-sobrancelhas-ia", "bs-sub-sobrancelhas", "bs-confirma-sobrancelhas"),
   edge("bs-e-outros-transicao-ia", "bs-outros-transicao", "bs-ia-coleta"),
+  edge("bs-e-confirma-cabelo-nome", "bs-confirma-cabelo", "bs-ask-nome-aniversario"),
+  edge("bs-e-confirma-unhas-nome", "bs-confirma-unhas", "bs-ask-nome-aniversario"),
+  edge("bs-e-confirma-cilios-nome", "bs-confirma-cilios", "bs-ask-nome-aniversario"),
+  edge("bs-e-confirma-sobrancelhas-nome", "bs-confirma-sobrancelhas", "bs-ask-nome-aniversario"),
   edge("bs-e-ask-nome-aniversario-ai", "bs-ask-nome-aniversario", "bs-ai-nome-aniversario"),
-  edge("bs-e-ai-nome-aniversario-coleta", "bs-ai-nome-aniversario", "bs-ia-coleta"),
+  edge("bs-e-ai-nome-aniversario-data", "bs-ai-nome-aniversario", "bs-ask-data-horario"),
+  edge("bs-e-ask-data-horario-ai", "bs-ask-data-horario", "bs-ai-data-horario"),
+  edge("bs-e-ai-data-horario-coleta", "bs-ai-data-horario", "bs-ia-coleta"),
 
   // ===== SONDAGEM CAPILAR =====
   // Cabelo passa PRIMEIRO pela cadeia de detecção — se o sub-serviço exigir
-  // sondagem, desvia pra `bs-sondagem-pergunta`; senão, cai no node de
-  // nome/aniversário como qualquer outra categoria (ver `fallbackTarget` da
-  // cadeia, definido como "bs-ask-nome-aniversario" na montagem dos nodes
-  // acima).
+  // sondagem, desvia pra `bs-sondagem-pergunta`; senão, cai na confirmação
+  // de categoria (`bs-confirma-cabelo`) como qualquer outra categoria (ver
+  // `fallbackTarget` da cadeia, na montagem dos nodes acima).
   edge("bs-e-sub-cabelo-sondagem", "bs-sub-cabelo", "bs-cond-sondagem-1"),
-  ...orConditionChain("bs-cond-sondagem-", "Serviço exige sondagem?", SONDAGEM_TRIGGER_TESTS, "bs-sondagem-pergunta", "bs-ask-nome-aniversario", 320).edges,
+  ...orConditionChain("bs-cond-sondagem-", "Serviço exige sondagem?", SONDAGEM_TRIGGER_TESTS, "bs-sondagem-pergunta", "bs-confirma-cabelo", 320).edges,
 
   edge("bs-e-sondagem-pergunta-ia", "bs-sondagem-pergunta", "bs-sondagem-quimica-foto"),
   edge("bs-e-sondagem-quimica-foto-cond", "bs-sondagem-quimica-foto", "bs-cond-quimica"),
