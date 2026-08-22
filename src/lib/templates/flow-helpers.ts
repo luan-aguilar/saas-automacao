@@ -163,38 +163,81 @@ function formatBrazilianDate(date: Date): string {
   return `${dd}/${mm}/${date.getFullYear()}`;
 }
 
-/**
- * Se o texto citar um dia da semana (ex: "Terça às 15") SEM nenhuma data
- * explícita (ex: "23/08") já presente, calcula por código a data exata da
- * PRÓXIMA ocorrência daquele dia (a partir de amanhã — nunca hoje, mesmo se
- * hoje for o mesmo dia da semana citado, é ambíguo demais assumir "hoje") e
- * devolve o texto com o nome do dia substituído pela data concreta,
- * preservando o resto (ex: o horário). Existe pelo mesmo motivo de
- * `resolveNumberedListChoice`: pedir pra uma IA "calcular" em que data cai a
- * próxima terça-feira é aritmética de calendário, não interpretação de
- * linguagem — resolver isso por código elimina a classe de erro inteira, em
- * vez de confiar na IA pra fazer a conta certa toda vez.
- *
- * Devolve null se não houver menção a dia da semana, se já houver uma data
- * explícita no texto (nesse caso não há nada a resolver), ou se
- * `dataAtualDDMMYYYY` não estiver num formato reconhecível.
- */
-export function resolveWeekdayToDate(text: string, dataAtualDDMMYYYY: string): string | null {
-  if (/\d{1,2}\/\d{1,2}/.test(text)) return null;
+const WEEKDAY_LABELS_PT = [
+  "Domingo",
+  "Segunda-feira",
+  "Terça-feira",
+  "Quarta-feira",
+  "Quinta-feira",
+  "Sexta-feira",
+  "Sábado",
+];
 
+const EXPLICIT_DATE_RE = /\bdia\s+(\d{1,2})(?:\/(\d{1,2})(?:\/(\d{2,4}))?)?\b|\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/i;
+
+export type DateReference =
+  | { kind: "weekday"; date: Date; formatted: string; weekday: string }
+  | { kind: "explicit"; date: Date; formatted: string; weekday: string; alreadyPassed: boolean };
+
+/**
+ * Analisa o texto do cliente em busca de uma referência de dia (explícita,
+ * tipo "dia 25", "25/08"/"25/08/2026" — ou por nome de dia da semana, tipo
+ * "Terça") e resolve por CÓDIGO, sem depender da IA "calcular" nada:
+ *
+ * - Data explícita: calcula se já passou ou não comparando com
+ *   `dataAtualDDMMYYYY` (nunca deixe a IA comparar dia-a-dia sozinha — é
+ *   aritmética de calendário, o mesmo tipo de erro de "contagem" já visto em
+ *   listas numeradas, ver `resolveNumberedListChoice`).
+ * - Dia da semana citado sem data explícita: calcula a data exata da PRÓXIMA
+ *   ocorrência daquele dia (a partir de amanhã — nunca hoje, mesmo que hoje
+ *   já seja esse dia da semana, é ambíguo demais assumir "hoje").
+ *
+ * Em ambos os casos devolve também o nome do dia da semana (para a resposta
+ * poder confirmar de volta pra cliente, ex: "Terça-feira, dia 25/08") — ver
+ * uso em `flow-engine.ts` (`executeAiResponseNode`), que injeta o resultado
+ * como uma dica pronta no prompt, a mesma técnica já usada pra listas
+ * numeradas.
+ *
+ * Devolve null se não houver nenhuma referência de dia reconhecível no texto
+ * (ex: só um horário solto, ou um termo relativo como "amanhã"/"sábado que
+ * vem" — esses continuam por conta da IA, são sempre futuros por definição)
+ * ou se `dataAtualDDMMYYYY` não estiver num formato reconhecível.
+ */
+export function analyzeDateReference(text: string, dataAtualDDMMYYYY: string): DateReference | null {
   const today = parseBrazilianDate(dataAtualDDMMYYYY);
   if (!today) return null;
 
-  for (const { regex, dow } of WEEKDAY_PATTERNS) {
-    const match = text.match(regex);
-    if (!match || match.index === undefined) continue;
+  const explicitMatch = text.match(EXPLICIT_DATE_RE);
+  if (explicitMatch) {
+    const day = Number(explicitMatch[1] ?? explicitMatch[4]);
+    const monthRaw = explicitMatch[2] ?? explicitMatch[5];
+    const yearRaw = explicitMatch[3] ?? explicitMatch[6];
+    const month = monthRaw ? Number(monthRaw) : today.getMonth() + 1;
+    const year = yearRaw ? Number(yearRaw.length === 2 ? `20${yearRaw}` : yearRaw) : today.getFullYear();
 
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+      const date = new Date(year, month - 1, day);
+      if (!Number.isNaN(date.getTime())) {
+        const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        return {
+          kind: "explicit",
+          date,
+          formatted: formatBrazilianDate(date),
+          weekday: WEEKDAY_LABELS_PT[date.getDay()],
+          alreadyPassed: date.getTime() < todayMidnight.getTime(),
+        };
+      }
+    }
+  }
+
+  for (const { regex, dow } of WEEKDAY_PATTERNS) {
+    if (!regex.test(text)) continue;
     let diff = (dow - today.getDay() + 7) % 7;
     if (diff === 0) diff = 7;
-    const target = new Date(today);
-    target.setDate(today.getDate() + diff);
-
-    return text.slice(0, match.index) + formatBrazilianDate(target) + text.slice(match.index + match[0].length);
+    const date = new Date(today);
+    date.setDate(today.getDate() + diff);
+    return { kind: "weekday", date, formatted: formatBrazilianDate(date), weekday: WEEKDAY_LABELS_PT[dow] };
   }
+
   return null;
 }

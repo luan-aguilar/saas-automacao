@@ -36,7 +36,7 @@ import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/encryption";
 import { sendWhatsappMessage, sendWhatsappButtons, sendWhatsappList } from "@/lib/whatsapp-service";
 import { findAvailableSlots, createCalendarEvent, appendSheetRow } from "@/lib/google-api";
-import { emojiNumber, resolveNumberedListChoice, resolveWeekdayToDate } from "@/lib/templates/flow-helpers";
+import { emojiNumber, resolveNumberedListChoice, analyzeDateReference } from "@/lib/templates/flow-helpers";
 
 export type FlowContext = {
   /** ID do usuário (tenant) dono do fluxo — usado para saber qual sessão do WhatsApp usar */
@@ -250,7 +250,25 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
     ? `\n\nRESOLUÇÃO AUTOMÁTICA DE LISTA NUMERADA: a última lista numerada mostrada ao cliente tinha, no número que ele acabou de responder, EXATAMENTE este item: "${numberedChoice}". Use esse texto exato pra preencher o campo correspondente — essa contagem já foi feita por código de forma exata, não tente recontar a lista você mesma.`
     : "";
 
-  const userContent = `Histórico da conversa até agora (linhas "Cliente:" são mensagens do contato, linhas "Assistente:" são mensagens já enviadas a ele — inclusive por blocos estáticos do fluxo, não só por você):\n${history}${knownVariablesBlock}${numberedChoiceHint}`;
+  // Se a mensagem mais recente do cliente citar um dia (explícito, tipo "dia
+  // 25"/"25/08", ou por nome de dia da semana, tipo "Terça"), resolve por
+  // CÓDIGO se já passou ou qual é a data exata correspondente — nunca deixe
+  // isso a cargo da IA, é o mesmo tipo de erro de "contagem"/aritmética já
+  // visto em listas numeradas (ver `resolveNumberedListChoice` acima). Ao
+  // injetar isso ANTES da chamada à OpenAI (e não só depois, reescrevendo o
+  // valor salvo), o texto que a IA escreve pro cliente já pode confirmar o
+  // dia exato na hora, em vez de só aparecer certo na confirmação final.
+  const dateReference = context.variables.data_atual
+    ? analyzeDateReference(context.incomingText ?? "", context.variables.data_atual)
+    : null;
+  let dateReferenceHint = "";
+  if (dateReference?.kind === "explicit" && dateReference.alreadyPassed) {
+    dateReferenceHint = `\n\nRESOLUÇÃO AUTOMÁTICA DE DATA: JÁ PASSOU. A data que a cliente acabou de mencionar (${dateReference.formatted}, ${dateReference.weekday}) já passou — hoje é ${context.variables.data_atual}. Isso já foi calculado por código, não recalcule nem questione. Rejeite educadamente: não preencha nenhuma variável de agendamento com essa data, avise que ela já passou e peça uma nova data. Não marque "done": true neste turno por causa disso.`;
+  } else if (dateReference) {
+    dateReferenceHint = `\n\nRESOLUÇÃO AUTOMÁTICA DE DATA: NÃO PASSOU. O dia exato que a cliente quis dizer é ${dateReference.weekday}, dia ${dateReference.formatted} — já calculado por código a partir de hoje (${context.variables.data_atual}), não recalcule nem troque por outro dia. Se isso completa a informação de dia/horário que faltava, PODE ACEITAR normalmente: preencha a variável de agendamento juntando esse dia calculado com o HORÁRIO REAL que a cliente mencionou na mensagem dela (o horário que ela de fato escreveu, nunca um valor inventado ou um texto de exemplo). Na sua resposta, confirme os dois de volta pra cliente de forma natural: o dia exato calculado acima E o horário real que ela informou — isso é obrigatório sempre que ela citar um dia da semana ou uma data, pra ela poder conferir se entendeu certo.`;
+  }
+
+  const userContent = `Histórico da conversa até agora (linhas "Cliente:" são mensagens do contato, linhas "Assistente:" são mensagens já enviadas a ele — inclusive por blocos estáticos do fluxo, não só por você):\n${history}${knownVariablesBlock}${numberedChoiceHint}${dateReferenceHint}`;
 
   const client = new OpenAI({ apiKey });
 
@@ -284,21 +302,6 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
       if (typeof value === "string" && value.trim() !== "") {
         context.variables[key] = value;
       }
-    }
-  }
-
-  // Se a cliente informou o agendamento por dia da semana (ex: "Terça às
-  // 15") em vez de uma data explícita, resolve por código qual é a data
-  // exata da próxima ocorrência daquele dia — ver `resolveWeekdayToDate`.
-  // Sem isso, a mensagem de confirmação final (regra "e" do prompt) mostraria
-  // só "Terça às 15h" pra cliente conferir, sem deixar claro SE isso é a
-  // terça desta semana (pode já ter passado) ou da que vem — e pior, ficaria
-  // a cargo da IA "calcular" isso sozinha a cada vez, o mesmo tipo de erro de
-  // contagem/aritmética já visto em listas numeradas.
-  if (context.variables.data_hora_agendamento && context.variables.data_atual) {
-    const resolvedDate = resolveWeekdayToDate(context.variables.data_hora_agendamento, context.variables.data_atual);
-    if (resolvedDate) {
-      context.variables.data_hora_agendamento = resolvedDate;
     }
   }
 
