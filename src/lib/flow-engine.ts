@@ -126,6 +126,15 @@ export async function executeAlertNotificationNode(
  * capturada como `ultima_resposta` pelo orquestrador na próxima mensagem.
  */
 async function executeStaticMessageNode(data: StaticMessageData, context: FlowContext): Promise<StepResult> {
+  // Node "silencioso" (ver `skipSend` em types.ts): não manda nada, só
+  // segue em frente — usado quando este node existe só pra capturar dados
+  // deterministicamente (`setVariables`/`captureLastReplyInto`, já
+  // aplicados pelo orquestrador antes de chegar aqui), sem anunciar isso
+  // como uma mensagem separada.
+  if (data.skipSend) {
+    return { ok: true, next: "continue" };
+  }
+
   const text = interpolateVariables(data.message, context.variables);
   const interactiveType = data.interactiveType ?? "buttons";
 
@@ -410,14 +419,29 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
     }
   }
 
-  const reply = parsed.reply?.trim() || "Desculpe, não consegui processar sua mensagem. Pode repetir, por favor?";
-  const sendResult = await sendWhatsappMessage(context.userId, context.contactPhone, reply);
-  if (!sendResult.ok) return { ok: false, error: sendResult.error };
-
   // `needsHuman` funciona como um "done" antecipado: avança para o próximo
   // node (tipicamente o bloco de encaminhamento humano) mesmo sem a coleta
   // ter sido concluída normalmente — ver `AI_JSON_CONTRACT`.
   const finished = parsed.done === true || parsed.needsHuman === true;
+
+  // Regra de "uma única mensagem por resposta do cliente" (ver
+  // `suppressReplyOnDone` em types.ts): quando a coleta foi concluída com
+  // sucesso (done: true) e este node foi configurado pra não anunciar isso
+  // com um "reply" próprio, pula o envio inteiramente — o PRÓXIMO node é
+  // quem manda a mensagem que realmente importa pro cliente ver nesse
+  // turno. Deliberadamente NÃO se aplica a `needsHuman`: esse é um
+  // encaminhamento por CONFUSÃO (a IA não entendeu o pedido), não uma
+  // conclusão normal — o "reply" nesse caso é a única explicação que a
+  // cliente recebe do porquê está sendo encaminhada, suprimir isso deixaria
+  // só a mensagem final genérica de handoff, sem contexto nenhum.
+  if (parsed.done === true && data.suppressReplyOnDone) {
+    return { ok: true, next: "continue" };
+  }
+
+  const reply = parsed.reply?.trim() || "Desculpe, não consegui processar sua mensagem. Pode repetir, por favor?";
+  const sendResult = await sendWhatsappMessage(context.userId, context.contactPhone, reply);
+  if (!sendResult.ok) return { ok: false, error: sendResult.error };
+
   return { ok: true, next: finished ? "continue" : "wait", sentText: reply, externalId: sendResult.externalId };
 }
 

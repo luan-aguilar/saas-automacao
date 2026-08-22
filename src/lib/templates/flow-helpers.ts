@@ -48,7 +48,7 @@ export function plainTextNode(
   message: string,
   waitForReply = false,
   disablesAiForChat = false,
-  extra?: { setVariables?: Record<string, string>; captureLastReplyInto?: string }
+  extra?: { setVariables?: Record<string, string>; captureLastReplyInto?: string; skipSend?: boolean }
 ): Node {
   return {
     id,

@@ -109,6 +109,18 @@ export type AiResponseData = {
    * cobre o reconhecimento — soa como a mesma coisa dita duas vezes.
    */
   confirmationRequiresVariables?: string[];
+  /**
+   * Se true, quando este node marcar "done"/"needsHuman" (ou seja, quando
+   * for avançar pro próximo node no mesmo turno), o motor NÃO envia o
+   * "reply" da IA — só avança. Existe pra regra de "uma única mensagem por
+   * resposta do cliente": sem isso, o reconhecimento breve da IA (ex:
+   * "Perfeito! 😊") chegaria como uma mensagem separada, logo antes da
+   * mensagem do PRÓXIMO node (que já cobre o que precisa ser dito) — duas
+   * mensagens pra uma única resposta do cliente. Enquanto o node ainda
+   * estiver coletando informação (done: false), o "reply" continua sendo
+   * enviado normalmente, já que é a ÚNICA fonte daquele texto.
+   */
+  suppressReplyOnDone?: boolean;
 };
 
 /** Tipo de mensagem interativa: botões simples (até 3) ou lista (até 10 itens). */
@@ -169,6 +181,17 @@ export type StaticMessageData = {
    * exata o contato escolheu num ponto de desvio condicional.
    */
   captureLastReplyInto?: string;
+  /**
+   * Quando true, o motor NÃO envia `message` pelo WhatsApp — só executa
+   * `setVariables`/`captureLastReplyInto` (se definidos) e segue direto pro
+   * próximo node, na mesma resposta do contato. Útil pra um node cuja única
+   * função é capturar dados deterministicamente (ex: qual sub-serviço um
+   * catálogo numerado resolveu), sem anunciar isso como uma mensagem
+   * separada — evita "duas mensagens pra uma única resposta do cliente"
+   * quando o PRÓXIMO node já vai mandar a mensagem que realmente importa.
+   * Ignora `waitForReply` (sempre segue em frente, nunca pausa aqui).
+   */
+  skipSend?: boolean;
 };
 
 export type ConditionData = {

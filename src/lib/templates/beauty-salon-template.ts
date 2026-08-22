@@ -628,7 +628,7 @@ Regras:
  * perguntando isso sozinho (regra "a.2" do prompt dele), mas agora com
  * instrução reforçada pra sempre citar o horário também nesse caso.
  */
-const DATA_HORARIO_MESSAGE = `Show! Qual dia e horário você prefere para o agendamento? Atendemos ${SALON_HOURS}. 😊`;
+const DATA_HORARIO_MESSAGE = `Perfeito! Qual dia e horário você prefere para o agendamento? Atendemos de terça a sábado das 9 às 18, exceto feriados.`;
 
 const AI_DATA_HORARIO_PROMPT = `Você é a assistente virtual do salão de beleza/estética Home Concept. A cliente acabou de receber uma mensagem perguntando sua preferência de dia e horário para o agendamento (funcionamento: ${SALON_HOURS}), e a mensagem mais recente dela é a resposta.
 
@@ -748,6 +748,9 @@ const NODES: Node[] = [
       customPrompt: AI_SONDAGEM_QUIMICA_FOTO_PROMPT,
       exitKeywords: ["menu", "voltar ao menu", "voltar pro menu", "voltar para o menu", "voltar"],
       exitTargetNodeId: "bs-menu",
+      // Regra de "uma única mensagem por resposta do cliente" — o próximo
+      // node (bs-sondagem-quimica-sim/nao) já manda o texto que importa.
+      suppressReplyOnDone: true,
     },
   },
 
@@ -776,6 +779,9 @@ const NODES: Node[] = [
       // distinguir "10/02" (aniversário, nunca deve ser validado) de
       // "sexta" (dia do agendamento, deveria) se os dois vierem juntos.
       // Fica por conta do prompt (ponto 3 de `AI_SONDAGEM_DADOS_PROMPT`).
+      // Regra de "uma única mensagem por resposta do cliente" — o próximo
+      // node (bs-handoff-humano) já manda a mensagem final.
+      suppressReplyOnDone: true,
     },
   },
   // ===== FIM SONDAGEM CAPILAR =====
@@ -790,14 +796,17 @@ const NODES: Node[] = [
   plainTextNode("bs-confirma-cabelo", { x: 900, y: 900 }, "Confirma categoria — Cabelo", categoriaConfirmMessage("Cabelo"), false, false, {
     setVariables: { servico_categoria: "Cabelo" },
     captureLastReplyInto: "servico_subtipo",
+    skipSend: true,
   }),
   plainTextNode("bs-confirma-unhas", { x: 900, y: 920 }, "Confirma categoria — Unhas", categoriaConfirmMessage("Unhas"), false, false, {
     setVariables: { servico_categoria: "Unhas" },
     captureLastReplyInto: "servico_subtipo",
+    skipSend: true,
   }),
   plainTextNode("bs-confirma-cilios", { x: 900, y: 940 }, "Confirma categoria — Cílios", categoriaConfirmMessage("Cílios"), false, false, {
     setVariables: { servico_categoria: "Cílios" },
     captureLastReplyInto: "servico_subtipo",
+    skipSend: true,
   }),
   plainTextNode(
     "bs-confirma-sobrancelhas",
@@ -806,7 +815,7 @@ const NODES: Node[] = [
     categoriaConfirmMessage("Sobrancelhas"),
     false,
     false,
-    { setVariables: { servico_categoria: "Sobrancelhas" }, captureLastReplyInto: "servico_subtipo" }
+    { setVariables: { servico_categoria: "Sobrancelhas" }, captureLastReplyInto: "servico_subtipo", skipSend: true }
   ),
 
   // NOME + ANIVERSÁRIO — node dedicado (ver comentário de bloco acima de
@@ -827,6 +836,9 @@ const NODES: Node[] = [
       // ligar a resolução automática do formato "nome numa linha, aniversário
       // na outra", ver `resolveNomeAniversario` em types.ts.
       resolveNomeAniversario: true,
+      // Regra de "uma única mensagem por resposta do cliente" — o próximo
+      // node (bs-ask-data-horario) já manda a mensagem que importa.
+      suppressReplyOnDone: true,
     },
   },
 
@@ -862,6 +874,11 @@ const NODES: Node[] = [
         closedWeekday: "Desculpe, mas atendemos de terça a sábado, por favor escolha outro dia da semana.",
         outsideHours: "Desculpe, mas atendemos das 9hrs às 18hrs, por favor escolha outro horario.",
       },
+      // Regra de "uma única mensagem por resposta do cliente" — quando o
+      // dia/horário for aceito, o próximo node (bs-ia-coleta) já manda a
+      // mensagem de confirmação, que é o que realmente importa nesse turno.
+      // A rejeição (curto-circuito acima) já é sempre a única mensagem.
+      suppressReplyOnDone: true,
     },
   },
 
@@ -925,6 +942,11 @@ const NODES: Node[] = [
       // "Perfeito! 😊" intermediário logo antes da mensagem final do
       // handoff, que também começa com "Perfeito!".
       confirmationRequiresVariables: ["lead_nome", "aniversario_cliente", "servico_categoria", "servico_subtipo", "data_hora_agendamento"],
+      // Cobre o raro caso em que a confirmação NÃO foi pega pelo curto-
+      // circuito acima (ex: texto livre fora da lista fechada) e a própria
+      // IA precisou marcar "done": true — mesmo nesse caso, não manda seu
+      // próprio "reply", já que bs-handoff-humano manda a mensagem final.
+      suppressReplyOnDone: true,
     },
   },
 
