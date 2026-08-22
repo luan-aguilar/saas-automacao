@@ -51,6 +51,21 @@ export type AiResponseData = {
    * JS (`Date.getDay()`: 0=domingo ... 6=sábado).
    */
   businessHours?: { openDays: number[]; openHour: number; closeHour: number };
+  /**
+   * Textos EXATOS (nunca gerados/parafraseados pela IA) enviados quando
+   * `checkScheduleRequest` rejeita o dia/horário pedido — o motor envia
+   * esse texto diretamente e nem chama a OpenAI nesse turno, garantindo
+   * 100% de aderência à frase pedida pelo dono do negócio. `datePassed`
+   * aceita os placeholders `{{formatted}}` (data resolvida, DD/MM/AAAA) e
+   * `{{dataAtual}}` (data de hoje). Se algum campo faltar, cai num texto
+   * genérico equivalente.
+   */
+  scheduleRejectionMessages?: {
+    datePassed?: string;
+    holiday?: string;
+    closedWeekday?: string;
+    outsideHours?: string;
+  };
 };
 
 /** Tipo de mensagem interativa: botões simples (até 3) ou lista (até 10 itens). */

@@ -203,6 +203,39 @@ type AiJsonResponse = { reply?: string; done?: boolean; needsHuman?: boolean; va
  * fluxo permanece pausado neste node aguardando a próxima mensagem.
  */
 async function executeAiResponseNode(data: AiResponseData, context: FlowContext): Promise<StepResult> {
+  // Validação de dia/horário de agendamento SEM passar pela IA (curto-
+  // circuito, antes de qualquer chamada à OpenAI): quando o dono do negócio
+  // pede um texto EXATO pra cada tipo de rejeição, a única forma de
+  // garantir 100% de aderência é o próprio código enviar esse texto —
+  // pedir pra IA "reproduzir exatamente" um texto é sujeito a paráfrase.
+  // Só roda quando `data_hora_agendamento` AINDA NÃO está confirmado (um
+  // valor já confirmado nunca deve ser reavaliado — ver o aviso mais abaixo
+  // que cobre esse caso pra quando a IA segue sendo chamada normalmente).
+  if (data.resolveDateReferences && data.businessHours && context.variables.data_atual && !context.variables.data_hora_agendamento) {
+    const scheduleCheck = checkScheduleRequest(context.incomingText ?? "", context.variables.data_atual, data.businessHours);
+    if (scheduleCheck && !scheduleCheck.valid) {
+      const messages = data.scheduleRejectionMessages ?? {};
+      let rejectionText: string;
+      if (scheduleCheck.reason === "date_passed") {
+        rejectionText = (
+          messages.datePassed ?? "Desculpe, mas o dia {{formatted}} já passou (hoje é {{dataAtual}}). Por favor, escolha outro dia."
+        )
+          .replace("{{formatted}}", scheduleCheck.formatted)
+          .replace("{{dataAtual}}", context.variables.data_atual);
+      } else if (scheduleCheck.reason === "holiday") {
+        rejectionText = messages.holiday ?? "Desculpe, mas não atendemos de feriado, domingo ou segunda, por favor escolha outro dia.";
+      } else if (scheduleCheck.reason === "closed_weekday") {
+        rejectionText = messages.closedWeekday ?? "Desculpe, mas atendemos de terça a sábado, por favor escolha outro dia da semana.";
+      } else {
+        rejectionText = messages.outsideHours ?? "Desculpe, mas atendemos das 9hrs às 18hrs, por favor escolha outro horario.";
+      }
+
+      const sendResult = await sendWhatsappMessage(context.userId, context.contactPhone, rejectionText);
+      if (!sendResult.ok) return { ok: false, error: sendResult.error };
+      return { ok: true, next: "wait", sentText: rejectionText, externalId: sendResult.externalId };
+    }
+  }
+
   const config = await prisma.config.findUnique({ where: { userId: context.userId } });
 
   if (!config?.openaiApiKeyEncrypted) {
@@ -268,35 +301,15 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
     ? `\n\nATENÇÃO: o campo \`data_hora_agendamento\` já está em "DADOS JÁ CONFIRMADOS" (valor: "${context.variables.data_hora_agendamento}") — já foi validado (dia, horário de funcionamento, feriados) e ACEITO num passo anterior do fluxo. NUNCA reavalie, recalcule ou rejeite esse valor de novo (nem como "já passou", nem "fora do horário") — copie exatamente como está, sem questionar.`
     : "";
 
-  // Se a mensagem mais recente do cliente citar um dia/horário pro
-  // agendamento, valida por CÓDIGO se já passou, se cai num dia fechado
-  // (fora de terça a sábado), se é feriado, ou se o horário está fora do
-  // expediente — nunca deixe isso a cargo da IA, é o mesmo tipo de erro de
-  // "contagem"/aritmética já visto em listas numeradas (ver
-  // `resolveNumberedListChoice` acima), agora incluindo regras de negócio
-  // que também não devem depender do julgamento do modelo. Só roda quando
-  // `data_hora_agendamento` AINDA NÃO está confirmado (a proteção acima já
-  // cobre o caso contrário) — evita computar isso duas vezes sem sentido.
-  const scheduleCheck =
-    data.resolveDateReferences && data.businessHours && context.variables.data_atual && !context.variables.data_hora_agendamento
-      ? checkScheduleRequest(context.incomingText ?? "", context.variables.data_atual, data.businessHours)
-      : null;
-
+  // Se chegou até aqui, a validação de dia/horário lá em cima (curto-
+  // circuito) já garantiu que não há problema de dia fechado/feriado/fora
+  // do expediente — o que sobrou pra resolver é só a data EXATA (pra IA
+  // confirmar de volta pra cliente, não só na confirmação final). Mesmo
+  // motivo de sempre: contagem/aritmética de calendário não deve ficar a
+  // cargo da IA (ver `resolveNumberedListChoice` acima).
   let dateReferenceHint = "";
-  if (scheduleCheck && !scheduleCheck.valid) {
-    if (scheduleCheck.reason === "date_passed") {
-      dateReferenceHint = `\n\nRESOLUÇÃO AUTOMÁTICA DE DATA: JÁ PASSOU. A data que a cliente acabou de mencionar (${scheduleCheck.formatted}, ${scheduleCheck.weekday}) já passou — hoje é ${context.variables.data_atual}. Isso já foi calculado por código, não recalcule nem questione. Rejeite educadamente: não preencha nenhuma variável de agendamento com essa data, avise que ela já passou e peça uma nova data. Não marque "done": true neste turno por causa disso.`;
-    } else if (scheduleCheck.reason === "closed_weekday") {
-      dateReferenceHint = `\n\nRESOLUÇÃO AUTOMÁTICA DE DATA: FORA DO DIA DE FUNCIONAMENTO. A cliente pediu ${scheduleCheck.weekday}, dia ${scheduleCheck.formatted} — não atendemos nesse dia da semana. Isso já foi calculado por código, não questione. Rejeite educadamente (algo como: "Desculpa, mas atendemos somente de Terça a Sábado. Poderia escolher outro dia da semana, por favor."), não preencha nenhuma variável de agendamento, não marque "done": true neste turno.`;
-    } else if (scheduleCheck.reason === "holiday") {
-      dateReferenceHint = `\n\nRESOLUÇÃO AUTOMÁTICA DE DATA: FERIADO. A data que a cliente pediu (${scheduleCheck.formatted}, ${scheduleCheck.weekday}) é feriado (${scheduleCheck.holiday}) — não funcionamos nesse dia. Isso já foi calculado por código, não questione. Rejeite educadamente (algo como: "Desculpe, mas não trabalhamos de feriado. Poderia escolher outro dia de Terça a Sábado, por favor."), não preencha nenhuma variável de agendamento, não marque "done": true neste turno.`;
-    } else if (scheduleCheck.reason === "outside_hours") {
-      const hh = String(scheduleCheck.hour).padStart(2, "0");
-      const mm = String(scheduleCheck.minute).padStart(2, "0");
-      dateReferenceHint = `\n\nRESOLUÇÃO AUTOMÁTICA DE DATA: FORA DO HORÁRIO DE FUNCIONAMENTO. O horário que a cliente pediu (${hh}:${mm}) está fora do expediente. Isso já foi calculado por código, não questione. Rejeite educadamente (algo como: "Desculpe, mas nosso horário de atendimento é das 09h às 18h. Poderia escolher outro horário, por favor."), não preencha nenhuma variável de agendamento, não marque "done": true neste turno.`;
-    }
-  } else if (scheduleCheck?.valid) {
-    const dateReference = analyzeDateReference(context.incomingText ?? "", context.variables.data_atual!);
+  if (data.resolveDateReferences && context.variables.data_atual && !context.variables.data_hora_agendamento) {
+    const dateReference = analyzeDateReference(context.incomingText ?? "", context.variables.data_atual);
     if (dateReference) {
       dateReferenceHint = `\n\nRESOLUÇÃO AUTOMÁTICA DE DATA: NÃO PASSOU, dentro do funcionamento. O dia exato que a cliente quis dizer é ${dateReference.weekday}, dia ${dateReference.formatted} — já calculado e validado por código (dia da semana e horário conferidos, dentro do funcionamento). Se isso completa a informação de dia/horário que faltava, PODE ACEITAR normalmente: preencha a variável de agendamento juntando esse dia calculado com o HORÁRIO REAL que a cliente mencionou na mensagem dela (o horário que ela de fato escreveu, nunca um valor inventado ou um texto de exemplo). Na sua resposta, confirme os dois de volta pra cliente de forma natural: o dia exato calculado acima E o horário real que ela informou — isso é obrigatório sempre que ela citar um dia da semana ou uma data, pra ela poder conferir se entendeu certo.`;
     }

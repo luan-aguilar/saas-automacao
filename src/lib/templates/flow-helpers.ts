@@ -379,13 +379,15 @@ export type ScheduleCheckResult =
  * confirmado num passo anterior do fluxo — mesmo com instrução explícita
  * pra só copiar dados já confirmados sem recalcular.
  *
- * Verifica, nesta ordem: (1) se a data já passou, (2) se o dia da semana
- * está fora do funcionamento, (3) se a data é feriado, (4) se o horário
- * mencionado está fora do expediente. Devolve o PRIMEIRO problema
- * encontrado, ou `{valid: true}` se não achou nenhum. Devolve `null` se o
- * texto não tiver nenhuma referência de dia OU horário reconhecível (nesse
- * caso não há nada pra validar ainda — ex: cliente só disse "amanhã de
- * manhã", sem dia da semana nem horário explícitos).
+ * Verifica, nesta ordem (a mesma exigida pelo dono do salão — problema de
+ * DIA sempre reportado antes de problema de HORÁRIO, nunca os dois juntos
+ * na mesma mensagem): (1) se a data já passou, (2) se é feriado, (3) se o
+ * dia da semana está fora do funcionamento, (4) se o horário mencionado
+ * está fora do expediente. Devolve o PRIMEIRO problema encontrado, ou
+ * `{valid: true}` se não achou nenhum. Devolve `null` se o texto não tiver
+ * nenhuma referência de dia OU horário reconhecível (nesse caso não há nada
+ * pra validar ainda — ex: cliente só disse "amanhã de manhã", sem dia da
+ * semana nem horário explícitos).
  */
 export function checkScheduleRequest(
   text: string,
@@ -398,12 +400,12 @@ export function checkScheduleRequest(
     if (dateRef.kind === "explicit" && dateRef.alreadyPassed) {
       return { valid: false, reason: "date_passed", formatted: dateRef.formatted, weekday: dateRef.weekday };
     }
-    if (!hours.openDays.includes(dateRef.date.getDay())) {
-      return { valid: false, reason: "closed_weekday", formatted: dateRef.formatted, weekday: dateRef.weekday };
-    }
     const holiday = holidayName(dateRef.date);
     if (holiday) {
       return { valid: false, reason: "holiday", formatted: dateRef.formatted, weekday: dateRef.weekday, holiday };
+    }
+    if (!hours.openDays.includes(dateRef.date.getDay())) {
+      return { valid: false, reason: "closed_weekday", formatted: dateRef.formatted, weekday: dateRef.weekday };
     }
   }
 
