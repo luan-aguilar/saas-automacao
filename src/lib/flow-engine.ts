@@ -723,7 +723,7 @@ export async function processIncomingMessage(params: {
       return;
     }
 
-    await runFlowForContact({ userId, flow, contactPhone, contactName, effectiveText, chat });
+    await runFlowForContact({ userId, flow, contactPhone, effectiveText, chat });
   } finally {
     await releaseContactLock(userId, contactPhone);
   }
@@ -734,11 +734,10 @@ async function runFlowForContact(params: {
   userId: string;
   flow: { id: string; nodes: unknown; edges: unknown };
   contactPhone: string;
-  contactName?: string;
   effectiveText: string;
   chat: { id: string };
 }): Promise<void> {
-  const { userId, flow, contactPhone, contactName, effectiveText, chat } = params;
+  const { userId, flow, contactPhone, effectiveText, chat } = params;
 
   const nodes = (flow.nodes as FlowNode[]) ?? [];
   const edges = (flow.edges as FlowGraphEdge[]) ?? [];
@@ -761,14 +760,21 @@ async function runFlowForContact(params: {
   // Variáveis "de sistema": preenchidas aqui a cada mensagem, nunca
   // dependendo da IA acertar o nome da chave ou "saber" a data de hoje —
   // usadas por blocos de notificação (ex: alerta de lead qualificado, que
-  // referencia {{lead_phone}}/{{data_atual}}). `lead_nome` só recebe o nome
-  // de perfil do WhatsApp como valor inicial (pode ser substituído depois
-  // pelo nome real que a IA coletar da cliente, se for diferente).
+  // referencia {{lead_phone}}/{{data_atual}}).
+  //
+  // De propósito, `lead_nome` NÃO é pré-preenchido com o nome de perfil do
+  // WhatsApp (`contactName`) — só a IA deve defini-lo, e só depois de
+  // perguntar e a cliente confirmar o nome dela na própria conversa. Um
+  // nome de perfil do WhatsApp pode ser um apelido, o nome de outra pessoa
+  // (celular emprestado/compartilhado) ou estar desatualizado; pré-encher
+  // silenciosamente fazia a IA (por causa do bloco "DADOS JÁ CONFIRMADOS",
+  // ver `executeAiResponseNode`) tratar isso como já confirmado e nunca
+  // chegar a perguntar — bug relatado em teste real. `contactName` continua
+  // sendo usado para o nome de exibição do Chat na Central de Atendimento
+  // (`logInboundMessageAndGetChat`), que é uma preocupação só de UI, não de
+  // dado de lead.
   variables.lead_phone = contactPhone;
   variables.data_atual = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
-  if (!variables.lead_nome && contactName) {
-    variables.lead_nome = contactName;
-  }
 
   // `_ai_history` é a memória de curto prazo que o node de IA usa como
   // contexto — mantida aqui, no orquestrador, para registrar TODA mensagem
