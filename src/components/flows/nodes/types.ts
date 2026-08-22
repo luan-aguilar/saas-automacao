@@ -52,6 +52,29 @@ export type AiResponseData = {
    */
   businessHours?: { openDays: number[]; openHour: number; closeHour: number };
   /**
+   * Lista de variáveis que precisam TODAS já estar confirmadas antes da
+   * validação de dia/horário (`resolveDateReferences`/`businessHours`)
+   * entrar em ação neste node. Existe pra nodes multi-propósito (ex: o
+   * Agente de Coleta do caminho "Outros assuntos", que também coleta nome/
+   * aniversário no mesmo node) — sem essa trava, um texto parecido com data
+   * (ex: aniversário "10/02") poderia ser mal interpretado como pedido de
+   * agendamento antes da hora certa. Ignorado se `resolveDateReferences`
+   * não estiver ligado.
+   */
+  scheduleRequiresVariables?: string[];
+  /**
+   * Se true, mesmo quando a validação de dia/horário encontrar um problema,
+   * o motor NÃO faz o curto-circuito (que pula a IA inteiramente) — em vez
+   * disso, injeta a mesma dica no prompt e deixa a IA decidir a resposta.
+   * Necessário em nodes multi-propósito onde a mensagem do contato pode
+   * conter outra coisa além da data (ex: uma correção de serviço) que a IA
+   * ainda precisa tratar nesse mesmo turno — um curto-circuito ignoraria
+   * isso. Em nodes de propósito único (ex: o node dedicado de dia/horário),
+   * deixe `false`/ausente pra ganhar a garantia de texto exato do
+   * curto-circuito.
+   */
+  scheduleHintOnly?: boolean;
+  /**
    * Textos EXATOS (nunca gerados/parafraseados pela IA) enviados quando
    * `checkScheduleRequest` rejeita o dia/horário pedido — o motor envia
    * esse texto diretamente e nem chama a OpenAI nesse turno, garantindo

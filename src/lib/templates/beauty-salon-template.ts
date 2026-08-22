@@ -269,13 +269,19 @@ Isso só se aplica ao caminho "Outros assuntos" — nas 4 categorias com catálo
 a.2) Dia e horário do agendamento — SE ainda não estiver em "DADOS JÁ CONFIRMADOS" (\`data_hora_agendamento\`), pergunte (só acontece no caminho "Outros assuntos" — nas 4 categorias com catálogo essa informação já chega pronta):
 Toda vez que você perguntar a preferência de dia/horário pela primeira vez, SEMPRE inclua explicitamente o horário de funcionamento na própria pergunta — nunca pergunte só "qual dia e horário você prefere?" sem citar o horário. Use algo como: "Qual dia e horário você prefere para o agendamento? Atendemos ${SALON_HOURS}. 😊" — isso é obrigatório em toda pergunta de dia/horário, não é opcional nem depende do serviço escolhido.
 
-Validação de dia/horário — NUNCA prossiga com um agendamento fora da grade de atendimento (IMPORTANTE):
-Essa validação é só pro DIA/HORÁRIO DO AGENDAMENTO, nunca pro aniversário (regra "a.1" acima) — mesmo que os dois cheguem na mesma mensagem, não confunda. Você recebe a data de hoje no bloco "DADOS JÁ CONFIRMADOS" (chave \`data_atual\`, formato DD/MM/AAAA). Toda vez que a cliente informar um dia/horário para o AGENDAMENTO, verifique NESTA ORDEM (pare no primeiro problema que encontrar — nunca aponte dois problemas na mesma mensagem):
-1. Data já passou? Se ela disser só o dia do mês (ex: "dia 20"), sem mês explícito, assuma o mês de \`data_atual\`; se esse dia já passou (é menor que o dia de hoje, mesmo mês) ou se ela disse uma data completa anterior a \`data_atual\`, já passou — NÃO aceite, NÃO preencha \`data_hora_agendamento\`, não marque "done": true, e responda avisando gentilmente que já passou.
-2. É feriado nacional (Confraternização Universal 01/01, Tiradentes 21/04, Dia do Trabalho 01/05, Independência 07/09, Nossa Senhora Aparecida 12/10, Finados 02/11, Proclamação da República 15/11, Consciência Negra 20/11, Natal 25/12, além de Carnaval/Sexta-feira Santa/Corpus Christi, que mudam de data a cada ano)? Se for, NÃO aceite, NÃO preencha \`data_hora_agendamento\`, não marque "done": true, e responda EXATAMENTE: "Desculpe, mas não atendemos de feriado, domingo ou segunda, por favor escolha outro dia."
-3. O dia da semana é domingo ou segunda-feira? (Se ela só disser o nome do dia da semana sem data explícita, ex: "Terça", NUNCA rejeite como "já passou" — trate como a próxima ocorrência futura daquele dia.) Se cair em domingo ou segunda, NÃO aceite, NÃO preencha \`data_hora_agendamento\`, não marque "done": true, e responda EXATAMENTE: "Desculpe, mas atendemos de terça a sábado, por favor escolha outro dia da semana."
-4. O horário mencionado está fora de 09:00–18:00? Se estiver, NÃO aceite, NÃO preencha \`data_hora_agendamento\`, não marque "done": true, e responda EXATAMENTE: "Desculpe, mas atendemos das 9hrs às 18hrs, por favor escolha outro horario."
-5. Se passou em todas as 4 verificações acima, aceite normalmente e preencha \`data_hora_agendamento\`.
+Validação de dia/horário — NUNCA prossiga com um agendamento fora da grade de atendimento, e NUNCA calcule isso sozinha quando tiver ajuda (IMPORTANTE):
+Essa validação é só pro DIA/HORÁRIO DO AGENDAMENTO, nunca pro aniversário (regra "a.1" acima) — mesmo que os dois cheguem na mesma mensagem, não confunda.
+
+Assim que \`lead_nome\` e \`aniversario_cliente\` já estiverem confirmados, você passa a receber uma dica pronta chamada "RESOLUÇÃO AUTOMÁTICA DE DATA" toda vez que a mensagem citar um dia — já calculada e validada por código (data passada, feriado, dia fechado e horário fora do expediente já checados). Quando essa dica existir, SIGA ELA, sem recalcular:
+- Se disser "PROBLEMA": rejeite respondendo EXATAMENTE com o texto que a própria dica fornece (sem parafrasear, sem mudar uma vírgula), NÃO preencha \`data_hora_agendamento\`, não marque "done": true.
+- Se disser "NÃO PASSOU, dentro do funcionamento": aceite normalmente, preencha \`data_hora_agendamento\` combinando o dia exato da dica com o horário real que a cliente escreveu, e confirme esse dia exato na resposta.
+
+Se NÃO houver dica nenhuma (situação rara — só acontece antes de nome/aniversário estarem confirmados, ou se a cliente disser algo relativo tipo "amanhã"), valide você mesma NESTA ORDEM (pare no primeiro problema, nunca aponte dois problemas juntos): você recebe a data de hoje no bloco "DADOS JÁ CONFIRMADOS" (chave \`data_atual\`, formato DD/MM/AAAA).
+1. Data já passou? Se ela disser só o dia do mês (ex: "dia 20"), sem mês explícito, assuma o mês de \`data_atual\`; se esse dia já passou ou se ela disse uma data completa anterior a \`data_atual\`, já passou — NÃO aceite, NÃO preencha \`data_hora_agendamento\`, não marque "done": true, e responda avisando gentilmente que já passou. Se ela só disser o nome do dia da semana (ex: "Terça"), NUNCA rejeite como "já passou" — trate como a próxima ocorrência futura.
+2. É feriado nacional (Confraternização Universal 01/01, Tiradentes 21/04, Dia do Trabalho 01/05, Independência 07/09, Nossa Senhora Aparecida 12/10, Finados 02/11, Proclamação da República 15/11, Consciência Negra 20/11, Natal 25/12, além de Carnaval/Sexta-feira Santa/Corpus Christi)? Se for, responda EXATAMENTE: "Desculpe, mas não atendemos de feriado, domingo ou segunda, por favor escolha outro dia." — sem marcar "done".
+3. O dia da semana é domingo ou segunda-feira? Se for, responda EXATAMENTE: "Desculpe, mas atendemos de terça a sábado, por favor escolha outro dia da semana." — sem marcar "done".
+4. O horário mencionado está fora de 09:00–18:00? Se estiver, responda EXATAMENTE: "Desculpe, mas atendemos das 9hrs às 18hrs, por favor escolha outro horario." — sem marcar "done".
+5. Se passou em todas as verificações, aceite normalmente e preencha \`data_hora_agendamento\`.
 
 b) Coleta e validação inteligente de fotos:
 - Se algum serviço escolhido envolver Cabelo (Mechas, Mega Hair, Progressiva, Hair Contour, Coloração, Botox Capilar, etc.): peça uma foto do cabelo atual da cliente e, se ela tiver, uma foto de referência do resultado desejado.
@@ -890,6 +896,25 @@ const NODES: Node[] = [
       // "tá bom", "aham", "pode confirmar") — ver `recognizeConfirmation`
       // em types.ts.
       recognizeConfirmation: true,
+      // Validação de dia/horário por código (mesma base do node dedicado
+      // `bs-ai-data-horario`), mas só entra em ação depois que nome,
+      // aniversário e serviço já estiverem confirmados (`scheduleRequiresVariables`)
+      // — evita que um texto parecido com data (ex: aniversário "10/02")
+      // seja mal interpretado como pedido de agendamento antes da hora
+      // certa. `scheduleHintOnly: true` porque este node tem várias
+      // responsabilidades no caminho "Outros assuntos" (pode receber uma
+      // correção de serviço na mesma mensagem) — nunca pula a IA
+      // inteiramente, só reforça o veredito por dica.
+      resolveDateReferences: true,
+      businessHours: { openDays: [2, 3, 4, 5, 6], openHour: 9, closeHour: 18 },
+      scheduleRejectionMessages: {
+        datePassed: "Desculpe, mas o dia {{formatted}} já passou (hoje é {{dataAtual}}). Por favor, escolha outro dia.",
+        holiday: "Desculpe, mas não atendemos de feriado, domingo ou segunda, por favor escolha outro dia.",
+        closedWeekday: "Desculpe, mas atendemos de terça a sábado, por favor escolha outro dia da semana.",
+        outsideHours: "Desculpe, mas atendemos das 9hrs às 18hrs, por favor escolha outro horario.",
+      },
+      scheduleRequiresVariables: ["lead_nome", "aniversario_cliente"],
+      scheduleHintOnly: true,
     },
   },
 
