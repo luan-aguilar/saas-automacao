@@ -23,6 +23,18 @@ export type AiResponseData = {
   exitKeywords?: string[];
   /** Node para onde o fluxo vai quando uma das `exitKeywords` é detectada (ver acima). */
   exitTargetNodeId?: string;
+  /**
+   * Se true, o motor tenta resolver por código (ver `analyzeDateReference`
+   * em `flow-helpers.ts`) qualquer dia/data que a resposta MAIS RECENTE do
+   * contato citar — data explícita já passada, ou nome de dia da semana —
+   * e injeta o resultado como uma dica pronta no prompt, ANTES da IA
+   * responder. Deixe `false`/ausente (padrão) em qualquer node que colete
+   * outra coisa que também possa parecer uma data (ex: aniversário — "10/02"
+   * não deve ser tratado como "essa data já passou", é só uma data de
+   * nascimento sem ano relevante). Ligue só nos nodes que de fato pedem o
+   * dia/horário do AGENDAMENTO.
+   */
+  resolveDateReferences?: boolean;
 };
 
 /** Tipo de mensagem interativa: botões simples (até 3) ou lista (até 10 itens). */

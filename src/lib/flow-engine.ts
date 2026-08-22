@@ -258,9 +258,10 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
   // injetar isso ANTES da chamada à OpenAI (e não só depois, reescrevendo o
   // valor salvo), o texto que a IA escreve pro cliente já pode confirmar o
   // dia exato na hora, em vez de só aparecer certo na confirmação final.
-  const dateReference = context.variables.data_atual
-    ? analyzeDateReference(context.incomingText ?? "", context.variables.data_atual)
-    : null;
+  const dateReference =
+    data.resolveDateReferences && context.variables.data_atual
+      ? analyzeDateReference(context.incomingText ?? "", context.variables.data_atual)
+      : null;
   let dateReferenceHint = "";
   if (dateReference?.kind === "explicit" && dateReference.alreadyPassed) {
     dateReferenceHint = `\n\nRESOLUÇÃO AUTOMÁTICA DE DATA: JÁ PASSOU. A data que a cliente acabou de mencionar (${dateReference.formatted}, ${dateReference.weekday}) já passou — hoje é ${context.variables.data_atual}. Isso já foi calculado por código, não recalcule nem questione. Rejeite educadamente: não preencha nenhuma variável de agendamento com essa data, avise que ela já passou e peça uma nova data. Não marque "done": true neste turno por causa disso.`;

@@ -267,11 +267,12 @@ Isso só se aplica ao caminho "Outros assuntos" — nas 4 categorias com catálo
 a.2) Dia e horário do agendamento — SE ainda não estiver em "DADOS JÁ CONFIRMADOS" (\`data_hora_agendamento\`), pergunte (só acontece no caminho "Outros assuntos" — nas 4 categorias com catálogo essa informação já chega pronta):
 Toda vez que você perguntar a preferência de dia/horário pela primeira vez, SEMPRE inclua explicitamente o horário de funcionamento na própria pergunta — nunca pergunte só "qual dia e horário você prefere?" sem citar o horário. Use algo como: "Qual dia e horário você prefere para o agendamento? Atendemos ${SALON_HOURS}. 😊" — isso é obrigatório em toda pergunta de dia/horário, não é opcional nem depende do serviço escolhido.
 
-Validação e resolução da data — NUNCA calcule isso sozinha (IMPORTANTE):
-Toda vez que a mensagem da cliente citar um dia (data explícita, tipo "dia 20" ou "20/08", ou nome de um dia da semana, tipo "Terça"), você recebe uma dica pronta chamada "RESOLUÇÃO AUTOMÁTICA DE DATA" — já calculada por código, nunca recalcule ou questione:
-- Se a dica disser que a data JÁ PASSOU: rejeite educadamente (ex: "Só um detalhe: essa data já passou, hoje já é [data_atual]! 😊 Você quis dizer outro dia, ou prefere escolher uma nova data?"), NÃO preencha \`data_hora_agendamento\`, e não marque "done": true por causa disso.
-- Se a dica trouxer a data exata resolvida: aceite normalmente, preencha \`data_hora_agendamento\` combinando o dia exato da dica com o horário informado, e CONFIRME esse dia exato na sua resposta (a própria dica sugere a frase) — obrigatório, pra cliente conseguir conferir o dia certo na hora.
-- Se NÃO houver dica nenhuma (a cliente disse algo relativo tipo "amanhã", sem citar dia da semana nem data): aceite normalmente, sem cálculo — é sempre futuro por definição.
+Validação da data — NUNCA aceite uma data que já passou (IMPORTANTE):
+Essa validação é só pro DIA DO AGENDAMENTO, nunca pro aniversário (regra "a.1" acima) — mesmo que os dois cheguem na mesma mensagem, não confunda. Você recebe a data de hoje no bloco "DADOS JÁ CONFIRMADOS" (chave \`data_atual\`, formato DD/MM/AAAA). Toda vez que a cliente informar um dia para o AGENDAMENTO, compare com \`data_atual\` antes de aceitar:
+- Se ela disser só o dia do mês (ex: "dia 20"), sem mês explícito, assuma o mês de \`data_atual\`. Se esse dia já passou (é menor que o dia de hoje, mesmo mês), essa data já ocorreu — NÃO aceite.
+- Se ela disser uma data completa (ex: "20/08" ou "20/08/2026") anterior a \`data_atual\`, mesma coisa: já passou, não aceite.
+- Nesses casos, NÃO preencha \`data_hora_agendamento\` com a data inválida — responda avisando gentilmente que essa data já passou e aguarde uma data válida antes de prosseguir. Nunca marque "done": true com uma data passada.
+- Se ela disser só o nome do dia da semana (ex: "Terça"), aceite normalmente, sem rejeitar como "já passou", mesmo que hoje já seja esse dia ou um depois dele.
 
 b) Coleta e validação inteligente de fotos:
 - Se algum serviço escolhido envolver Cabelo (Mechas, Mega Hair, Progressiva, Hair Contour, Coloração, Botox Capilar, etc.): peça uma foto do cabelo atual da cliente e, se ela tiver, uma foto de referência do resultado desejado.
@@ -442,7 +443,7 @@ Sua ÚNICA função aqui é coletar essas 3 informações — elas podem chegar 
 
 1. Nome completo → salve em \`lead_nome\`.
 2. Dia e mês de aniversário (ex: "15/03" ou "15 de março") → salve em \`aniversario_cliente\`.
-3. Melhor dia (terça a sábado) para a avaliação presencial → salve em \`data_hora_agendamento\`. Se a mensagem citar um dia (data explícita ou nome de dia da semana), você recebe uma dica pronta "RESOLUÇÃO AUTOMÁTICA DE DATA" — já calculada por código, nunca recalcule. Se a dica disser que já passou, rejeite e peça uma nova data (não marque "done" por causa disso). Se trouxer a data resolvida, aceite normalmente, preencha \`data_hora_agendamento\` com o dia exato da dica, e confirme esse dia exato na resposta.
+3. Melhor dia (terça a sábado) para a avaliação presencial → salve em \`data_hora_agendamento\`. IMPORTANTE: essa validação de data é só pro DIA DO AGENDAMENTO, nunca pro aniversário (item 2 acima) — mesmo que os dois cheguem na mesma mensagem, não confunda um com o outro. Se a cliente informar uma data específica pro agendamento (ex: "20/08"), compare com \`data_atual\` (bloco "DADOS JÁ CONFIRMADOS", formato DD/MM/AAAA) — se já passou, não aceite: avise gentilmente e peça uma nova data, sem marcar "done" por causa disso. Se ela informar só o nome do dia da semana (ex: "Terça"), aceite normalmente, sem rejeitar como "já passou", mesmo que hoje já seja esse dia ou um depois dele.
 4. SEMPRE que preencher \`data_hora_agendamento\` pela primeira vez (ou seja, no MESMO turno em que a coleta fica completa e "done" vira true), preencha TAMBÉM \`resumo_ia\` nesse mesmo JSON — nunca deixe pra depois. Um resumo curto (1 frase), citando o sub-serviço (está no início do histórico da conversa, ex: "Cliente: Mechas") e se possui resíduo de química (está no histórico também). Exemplo de valor: "Cliente interessada em Mechas, possui resíduo de química, avaliação presencial." — obrigatório, não pule este campo.
 
 IMPORTANTE — a cliente pode responder de DUAS formas diferentes, e você precisa reconhecer as duas igualmente bem:
@@ -731,6 +732,13 @@ const NODES: Node[] = [
       customPrompt: AI_SONDAGEM_DADOS_PROMPT,
       exitKeywords: ["menu", "voltar ao menu", "voltar pro menu", "voltar para o menu", "voltar"],
       exitTargetNodeId: "bs-menu",
+      // NÃO liga `resolveDateReferences` aqui: este node coleta nome +
+      // aniversário + melhor dia, às vezes na MESMA mensagem (ver prompt,
+      // cenário "TODAS as 3 de uma vez") — a resolução de data olha só o
+      // texto mais recente do contato inteiro, então não teria como
+      // distinguir "10/02" (aniversário, nunca deve ser validado) de
+      // "sexta" (dia do agendamento, deveria) se os dois vierem juntos.
+      // Fica por conta do prompt (ponto 3 de `AI_SONDAGEM_DADOS_PROMPT`).
     },
   },
   // ===== FIM SONDAGEM CAPILAR =====
@@ -795,6 +803,11 @@ const NODES: Node[] = [
       customPrompt: AI_DATA_HORARIO_PROMPT,
       exitKeywords: ["menu", "voltar ao menu", "voltar pro menu", "voltar para o menu", "voltar"],
       exitTargetNodeId: "bs-menu",
+      // Único node cuja ÚNICA pergunta é o dia/horário do agendamento (nome
+      // e aniversário já foram coletados no node anterior) — seguro ligar a
+      // resolução automática de data aqui, ver `resolveDateReferences` em
+      // types.ts.
+      resolveDateReferences: true,
     },
   },
 
