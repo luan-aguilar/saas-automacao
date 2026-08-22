@@ -373,6 +373,7 @@ export async function POST(request: NextRequest) {
       contactPhone,
       contactName: body.data?.pushName,
       messageText,
+      externalMessageId: key.id,
     });
   } catch (error) {
     console.error("[webhook/whatsapp] Erro ao processar mensagem recebida:", error);

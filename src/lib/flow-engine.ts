@@ -185,7 +185,7 @@ const AI_JSON_CONTRACT = `Responda SEMPRE em um único objeto JSON válido, sem 
 - "reply": a mensagem a enviar agora ao cliente — curta, natural, adequada para WhatsApp.
 - "done": true SOMENTE quando você já coletou todas as informações necessárias e o cliente confirmou explicitamente os dados. Caso contrário, false.
 - "needsHuman": true quando a cliente pedir ou perguntar algo que você não sabe/não deve responder sozinha (fora do que está parametrizado para você, um pedido incomum, ou você não conseguir entender o que ela quer mesmo depois de tentar esclarecer) — nesse caso o sistema encaminha automaticamente para um atendente humano logo em seguida, então "reply" pode ser só um reconhecimento breve. Caso contrário, false.
-- "variables": todos os dados já coletados nesta conversa até agora (não apenas o que mudou agora), como texto simples.`;
+- "variables": todos os dados já coletados nesta conversa até agora. IMPORTANTE: se a mensagem do usuário incluir um bloco "DADOS JÁ CONFIRMADOS", copie esses valores para dentro de "variables" EXATAMENTE como estão — são a fonte da verdade, já validados, e NÃO devem ser recalculados/reconferidos a partir do histórico a cada resposta seguinte (é assim que um valor certo acaba virando errado de novo depois de já ter sido corrigido). Só mude o valor de um campo específico quando a ÚLTIMA mensagem do cliente contiver uma correção explícita e inequívoca pra aquele campo (ex: "não, era o outro", "errei, é X") — nesse caso, atualize só esse campo e mantenha todos os demais idênticos ao que já estava confirmado. Campos nunca antes confirmados, sim, você extrai do histórico normalmente.`;
 
 type AiJsonResponse = { reply?: string; done?: boolean; needsHuman?: boolean; variables?: Record<string, string> };
 
@@ -222,7 +222,24 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
   // (o número de um item do catálogo mostrado por um node estático)
   // chegaria à IA sem contexto nenhum sobre a que catálogo ela se refere.
   const history = context.variables._ai_history?.trim() || `Cliente: ${context.incomingText ?? ""}`;
-  const userContent = `Histórico da conversa até agora (linhas "Cliente:" são mensagens do contato, linhas "Assistente:" são mensagens já enviadas a ele — inclusive por blocos estáticos do fluxo, não só por você):\n${history}`;
+
+  // Manda os dados JÁ CONFIRMADOS explicitamente (não só o histórico em
+  // texto corrido) — sem isso, o modelo precisa "re-derivar" tudo do zero a
+  // cada resposta, e um erro de leitura em qualquer turno (ex: contar
+  // errado um item de uma lista numerada) apaga silenciosamente uma
+  // correção que o cliente já tinha feito num turno anterior. Ver
+  // `AI_JSON_CONTRACT`: o modelo é instruído a copiar isso, não recalcular.
+  const knownVariables = Object.entries(context.variables).filter(
+    ([key, value]) => !key.startsWith("_") && value && value.trim() !== ""
+  );
+  const knownVariablesBlock =
+    knownVariables.length > 0
+      ? `\n\nDADOS JÁ CONFIRMADOS (fonte da verdade — copie para "variables" sem recalcular, a menos que o cliente esteja corrigindo um campo específico agora):\n${knownVariables
+          .map(([key, value]) => `${key}: ${value}`)
+          .join("\n")}`
+      : "";
+
+  const userContent = `Histórico da conversa até agora (linhas "Cliente:" são mensagens do contato, linhas "Assistente:" são mensagens já enviadas a ele — inclusive por blocos estáticos do fluxo, não só por você):\n${history}${knownVariablesBlock}`;
 
   const client = new OpenAI({ apiKey });
 
@@ -486,7 +503,8 @@ async function logInboundMessageAndGetChat(
   contactPhone: string,
   contactName: string | undefined,
   content: string,
-  defaultAiEnabledForNewChat: boolean
+  defaultAiEnabledForNewChat: boolean,
+  externalId?: string
 ) {
   const existing = await prisma.chat.findUnique({ where: { userId_contactPhone: { userId, contactPhone } } });
 
@@ -512,7 +530,7 @@ async function logInboundMessageAndGetChat(
       });
 
   await prisma.message.create({
-    data: { chatId: chat.id, direction: "INBOUND", sender: "CONTACT", content },
+    data: { chatId: chat.id, direction: "INBOUND", sender: "CONTACT", content, externalId },
   });
 
   return chat;
@@ -578,6 +596,16 @@ async function releaseContactLock(userId: string, contactPhone: string): Promise
  *      geral desligada.
  * Em qualquer um desses casos a mensagem já está salva no histórico, só a
  * automação é que não roda.
+ *
+ * `externalMessageId` (o `key.id` da Evolution API): usado só pra detectar
+ * REENTREGA do mesmo evento de webhook — a Evolution API pode reenviar a
+ * mesma mensagem se demorarmos a responder (ex: enquanto uma chamada à
+ * OpenAI ainda está em andamento). Sem essa checagem, a reentrega roda o
+ * motor de fluxo DE NOVO pro mesmo texto; se isso acontecer depois de uma
+ * mensagem mais nova do contato já ter sido processada, a reentrega
+ * sobrescreve a sessão com uma resposta baseada em conteúdo desatualizado —
+ * foi exatamente o bug relatado: uma correção que a cliente já tinha feito
+ * "sumiu" da sessão depois de uma reentrega tardia do webhook original.
  */
 export async function processIncomingMessage(params: {
   userId: string;
@@ -585,52 +613,78 @@ export async function processIncomingMessage(params: {
   contactPhone: string;
   contactName?: string;
   messageText: string;
+  externalMessageId?: string;
 }): Promise<void> {
-  const { userId, flow, contactPhone, contactName, messageText } = params;
+  const { userId, flow, contactPhone, contactName, messageText, externalMessageId } = params;
 
   const effectiveText = messageText || "[mensagem sem texto reconhecível]";
 
-  const config = await prisma.config.findUnique({ where: { userId }, select: { aiGloballyEnabled: true } });
-  let chat = await logInboundMessageAndGetChat(
-    userId,
-    contactPhone,
-    contactName,
-    effectiveText,
-    config?.aiGloballyEnabled !== false
-  );
-
-  if (!flow) {
-    console.log(
-      "[flow-engine] Tenant sem fluxo ativo — mensagem registrada na Central de Atendimento, sem automação:",
-      { userId, contactPhone }
-    );
-    return;
-  }
-
-  // A partir daqui mexemos em estado compartilhado ENTRE MENSAGENS do mesmo
-  // contato (FlowSession, Chat.aiEnabled/pipelineStage) — precisa rodar uma
-  // mensagem de cada vez, nunca em paralelo. Sem esse lock, duas mensagens
-  // do mesmo contato chegando quase juntas (comum quando a pessoa manda a
-  // resposta "em pedaços") disparam duas invocações concorrentes deste
-  // webhook, cada uma lendo o mesmo estado desatualizado e a que terminar
-  // por último sobrescrevendo o resultado da primeira — foi exatamente
-  // esse bug relatado: a cliente mandou nome/aniversário/dia e, segundos
-  // depois, o horário exato numa segunda mensagem; a segunda foi processada
-  // com um estado "velho" (sem saber que a primeira já tinha coletado tudo),
-  // fazendo a IA perguntar os mesmos dados de novo.
+  // O lock é adquirido ANTES até da checagem de duplicata / do registro da
+  // mensagem — não só antes de mexer na FlowSession — porque a própria
+  // checagem de duplicata (ler se já existe um Message com este
+  // `externalId`) precisa ser atômica em relação a outra entrega do mesmo
+  // evento chegando quase ao mesmo tempo: se as duas checagens rodassem
+  // fora do lock, ambas poderiam ler "não existe ainda" antes de qualquer
+  // uma delas gravar, e a deduplicação não pegaria nada.
+  //
+  // Sem esse lock (cobrindo tudo, do registro da mensagem em diante), duas
+  // mensagens do mesmo contato chegando quase juntas — seja duas mensagens
+  // reais em sequência, seja a Evolution API reentregando o mesmo evento
+  // por termos demorado a responder (ex: aguardando a OpenAI) — disparam
+  // invocações concorrentes deste webhook, cada uma lendo o mesmo estado
+  // desatualizado; a que terminar por último sobrescreve o resultado da
+  // primeira. Foi exatamente esse bug relatado duas vezes: uma vez com
+  // mensagens genuinamente separadas (cliente mandou nome/aniversário/dia e,
+  // segundos depois, o horário exato numa segunda mensagem — a segunda via
+  // um estado "velho" sem saber que a primeira já tinha coletado tudo), e
+  // outra vez com uma correção que a cliente já tinha feito "sumindo" da
+  // sessão — consistente com uma reentrega tardia do webhook original
+  // reprocessando conteúdo já superado.
   const lockAcquired = await acquireContactLockWithRetry(userId, contactPhone);
   if (!lockAcquired) {
     console.warn(
-      "[flow-engine] Não foi possível reservar o processamento deste contato a tempo (outra mensagem dele ainda estava sendo processada) — mensagem registrada, automação pulada nesta rodada:",
+      "[flow-engine] Não foi possível reservar o processamento deste contato a tempo (outra mensagem dele ainda estava sendo processada) — mensagem NÃO registrada nesta rodada:",
       { userId, contactPhone }
     );
     return;
   }
 
   try {
-    // Relê o chat: pode ter mudado (aiEnabled, pipelineStage) enquanto
-    // esperávamos uma chamada concorrente anterior liberar o lock.
-    chat = await prisma.chat.findUniqueOrThrow({ where: { id: chat.id } });
+    if (externalMessageId) {
+      const existingChat = await prisma.chat.findUnique({ where: { userId_contactPhone: { userId, contactPhone } } });
+      if (existingChat) {
+        const alreadyProcessed = await prisma.message.findFirst({
+          where: { chatId: existingChat.id, direction: "INBOUND", externalId: externalMessageId },
+          select: { id: true },
+        });
+        if (alreadyProcessed) {
+          console.warn("[flow-engine] Mensagem recebida duplicada (reentrega do webhook) — ignorada:", {
+            userId,
+            contactPhone,
+            externalMessageId,
+          });
+          return;
+        }
+      }
+    }
+
+    const config = await prisma.config.findUnique({ where: { userId }, select: { aiGloballyEnabled: true } });
+    let chat = await logInboundMessageAndGetChat(
+      userId,
+      contactPhone,
+      contactName,
+      effectiveText,
+      config?.aiGloballyEnabled !== false,
+      externalMessageId
+    );
+
+    if (!flow) {
+      console.log(
+        "[flow-engine] Tenant sem fluxo ativo — mensagem registrada na Central de Atendimento, sem automação:",
+        { userId, contactPhone }
+      );
+      return;
+    }
 
     // Cliente recorrente: se este contato já tinha concluído o funil antes
     // (coluna "Agendamento Concluído" no Kanban de /pipeline) e escreveu de
