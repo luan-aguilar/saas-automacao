@@ -31,10 +31,14 @@
  *   -> Captura do nome (IA dedicada, só isso — mesmo padrão já validado no
  *      Salão de Beleza: node pequeno e focado é muito mais confiável que
  *      pedir pra um node genérico "lembrar" de extrair um campo a mais)
- *   -> Pergunta de interesse no veículo — texto varia conforme
- *      `veiculo_anuncio` ter sido detectado ou não (dois nodes estáticos,
- *      nunca a IA decidindo o que perguntar)
- *   -> Captura do veículo de interesse (IA dedicada) -> `veiculo_interesse`
+ *   -> Se `veiculo_anuncio` foi detectado: pergunta se é só esse modelo ou
+ *      se ela também tem interesse em outros (texto fixo) -> IA dedicada
+ *      captura `veiculo_interesse` (mesmo ou outro modelo).
+ *      Se NÃO foi detectado (ex: contato espontâneo, "oi"): pula essa
+ *      pergunta inteira e vai direto pro menu de negociação —
+ *      `veiculo_interesse` fica como "Não especificado" (testado ao vivo:
+ *      perguntar "qual veículo te interessou" pra quem não veio de anúncio
+ *      foi considerado desnecessário, o vendedor descobre isso na negociação).
  *   -> Menu de negociação (texto fixo, numerado): 1-À vista, 2-Troca,
  *      3-Financiamento, 4-Outros assuntos
  *   -> Cadeia de condições (nome OU número, igual ao menu do Salão de
@@ -156,7 +160,7 @@ const AI_NOME_PROMPT = `Você é a assistente virtual da KFG Veículos. A client
 Sua ÚNICA função aqui é capturar o nome completo (ou como ela preferir se identificar) em \`lead_nome\`.
 
 Regras:
-- Assim que tiver o nome, marque "done": true IMEDIATAMENTE — "reply" não é enviado nesse caso (o sistema já cuida da próxima mensagem sozinho), então não precisa se preocupar com o texto dele.
+- Assim que tiver o nome, marque "done": true IMEDIATAMENTE, e NO MESMO JSON o campo "variables" TEM que incluir \`lead_nome\` preenchido — isso é obrigatório, mesmo que "reply" não seja enviado ao cliente nesse caso (o sistema já cuida da próxima mensagem sozinho). Marcar "done": true sem incluir \`lead_nome\` nesse mesmo turno é um erro — não há uma segunda chance de preenchê-lo depois.
 - Se a cliente perguntar ou comentar algo fora desse escopo antes de dizer o nome (preço, dúvida sobre o veículo): responda brevemente se souber, e repita o pedido do nome. NUNCA marque "needsHuman": true só por isso.
 - Seja calorosa, use poucos emojis, mensagens curtas.`;
 
@@ -179,7 +183,7 @@ Sua ÚNICA função aqui é determinar \`veiculo_interesse\` (o veículo final q
 - Se não havia veículo detectado do anúncio e ela agora disser qual é, salve em \`veiculo_interesse\`.
 
 Regras:
-- Assim que tiver \`veiculo_interesse\` definido, marque "done": true IMEDIATAMENTE — "reply" não é enviado nesse caso, o sistema já mostra a próxima etapa sozinho.
+- Assim que tiver \`veiculo_interesse\` definido, marque "done": true IMEDIATAMENTE, e NO MESMO JSON o campo "variables" TEM que incluir \`veiculo_interesse\` preenchido — isso é obrigatório, mesmo que "reply" não seja enviado ao cliente nesse caso (o sistema já mostra a próxima etapa sozinho). Marcar "done": true sem incluir \`veiculo_interesse\` nesse mesmo turno é um erro.
 - Se a resposta for ambígua ou não deixar claro qual veículo (ex: só "sim" sem contexto nenhum de qual veículo ela está confirmando, e não havia veículo do anúncio pra usar como referência), peça gentilmente pra ela dizer o nome do veículo. Marque "done": false nesse caso.
 - Seja calorosa, use poucos emojis, mensagens curtas.`;
 }
@@ -205,7 +209,7 @@ Sua ÚNICA função aqui é capturar essas informações em \`veiculo_troca_info
 
 Regras:
 - Ela pode responder tudo de uma vez ou aos poucos, em mensagens separadas — peça só o que ainda estiver faltando (modelo, ano, km, versão), nunca repita o que já foi dado.
-- Assim que tiver pelo menos modelo e ano do veículo da troca (km e versão são bons de ter, mas não trave o atendimento se ela não souber de cabeça), marque "done": true e preencha \`veiculo_troca_info\` e \`resumo_ia\` no MESMO turno — "reply" não é enviado nesse caso, o sistema já mostra a próxima etapa sozinho.
+- Assim que tiver pelo menos modelo e ano do veículo da troca (km e versão são bons de ter, mas não trave o atendimento se ela não souber de cabeça), marque "done": true, e NO MESMO JSON o campo "variables" TEM que incluir \`veiculo_troca_info\` E \`resumo_ia\` preenchidos — obrigatório, mesmo que "reply" não seja enviado ao cliente nesse caso (o sistema já mostra a próxima etapa sozinho). Marcar "done": true sem os dois campos nesse mesmo turno é um erro.
 - Se a cliente perguntar algo fora desse escopo, responda brevemente se souber e repita o pedido. NUNCA marque "needsHuman": true só por isso.
 - Seja calorosa, use poucos emojis, mensagens curtas.`;
 
@@ -317,17 +321,17 @@ const NODES: Node[] = [
     },
   },
 
-  // Pergunta sobre o veículo de interesse — texto varia conforme o anúncio
-  // já ter revelado um veículo específico ou não, mas SEMPRE um texto FIXO
-  // (nunca a IA decidindo o que perguntar).
+  // Se o anúncio já revelou um veículo específico, confirma se é só esse ou
+  // se ela tem interesse em outros (pedido original do dono da KFG). Se NÃO
+  // veio de anúncio (ex: contato espontâneo, "oi"), pula direto pro menu de
+  // negociação — perguntar "qual veículo te interessou" nesse caso foi
+  // testado ao vivo e considerado desnecessário, o vendedor pode descobrir
+  // isso na negociação mesmo.
   conditionNode("kfg-cond-veiculo-detectado", { x: 600, y: 800 }, "Veículo já detectado no anúncio?", "", "EQUALS", "veiculo_anuncio"),
-  plainTextNode(
-    "kfg-ask-veiculo-generico",
-    { x: 450, y: 860 },
-    "Pergunta veículo — genérico",
-    `Prazer, {{lead_nome}}! Qual veículo despertou seu interesse? 🚗`,
-    true
-  ),
+  plainTextNode("kfg-set-veiculo-nao-especificado", { x: 450, y: 860 }, "Define veículo — não especificado", `(silencioso)`, false, false, {
+    setVariables: { veiculo_interesse: "Não especificado" },
+    skipSend: true,
+  }),
   plainTextNode(
     "kfg-ask-veiculo-especifico",
     { x: 750, y: 860 },
@@ -509,9 +513,9 @@ const EDGES: Edge[] = [
 
   edge("kfg-e-ask-nome-ai", "kfg-ask-nome", "kfg-ai-nome"),
   edge("kfg-e-ai-nome-cond", "kfg-ai-nome", "kfg-cond-veiculo-detectado"),
-  edge("kfg-e-cond-veiculo-yes", "kfg-cond-veiculo-detectado", "kfg-ask-veiculo-generico", "yes"),
+  edge("kfg-e-cond-veiculo-yes", "kfg-cond-veiculo-detectado", "kfg-set-veiculo-nao-especificado", "yes"),
   edge("kfg-e-cond-veiculo-no", "kfg-cond-veiculo-detectado", "kfg-ask-veiculo-especifico", "no"),
-  edge("kfg-e-ask-veiculo-generico-ai", "kfg-ask-veiculo-generico", "kfg-ai-interesse"),
+  edge("kfg-e-set-veiculo-nao-especificado-menu", "kfg-set-veiculo-nao-especificado", "kfg-menu-negociacao"),
   edge("kfg-e-ask-veiculo-especifico-ai", "kfg-ask-veiculo-especifico", "kfg-ai-interesse"),
   edge("kfg-e-ai-interesse-menu", "kfg-ai-interesse", "kfg-menu-negociacao"),
 
