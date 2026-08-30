@@ -489,3 +489,34 @@ const CONFIRMATION_PHRASES = new Set(
 export function isExplicitConfirmation(text: string): boolean {
   return CONFIRMATION_PHRASES.has(normalizeForMatch(text));
 }
+
+// Negação primeiro, sempre — "não tenho" contém "tenho" (que sozinho seria
+// afirmativo), então checar afirmação antes erraria justamente a resposta
+// mais comum de negação. Ordem importa aqui.
+const NEGATIVE_RE = /\b(nao|não|nunca|jamais|negativo)\b/;
+const AFFIRMATIVE_RE = /\b(sim|tenho|possuo|positivo|infelizmente|claro|isso)\b/;
+
+/**
+ * Classifica uma resposta curta como afirmativa ou negativa a uma pergunta
+ * de SIM/NÃO (ex: "possui restrição bancária?", "tem CNH ativa?") — por
+ * código, nunca deixe a IA "decidir" isso sozinha quando há uma dica pronta.
+ * Existe pelo mesmo motivo de `isExplicitConfirmation`/`resolveNomeAniversarioPair`:
+ * em teste ao vivo, um node de IA cuja ÚNICA tarefa era essa classificação
+ * binária mostrou hesitação (não marcava "done") sempre que o prompt também
+ * recebia outras variáveis já confirmadas no bloco "DADOS JÁ CONFIRMADOS" —
+ * a mesma distração já vista em outras extrações simples.
+ *
+ * Reconhece tanto "1"/"2" (convenção do app pra listas numeradas "1-Sim,
+ * 2-Não") quanto palavras-chave livres. Devolve null se não conseguir
+ * classificar (a IA continua responsável por interpretar nesse caso).
+ */
+export function classifyAffirmative(text: string, options?: { affirmativeDigit?: string; negativeDigit?: string }): "sim" | "não" | null {
+  const trimmed = text.trim();
+  if (options?.negativeDigit && trimmed === options.negativeDigit) return "não";
+  if (options?.affirmativeDigit && trimmed === options.affirmativeDigit) return "sim";
+
+  const normalized = trimmed.toLowerCase();
+  if (NEGATIVE_RE.test(normalized)) return "não";
+  if (AFFIRMATIVE_RE.test(normalized)) return "sim";
+  return null;
+}

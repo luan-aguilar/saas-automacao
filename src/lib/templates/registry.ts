@@ -17,6 +17,7 @@
 import type { Node, Edge } from "@xyflow/react";
 import { createBeautySalonTemplate, BEAUTY_SALON_TEMPLATE_NAME } from "./beauty-salon-template";
 import { createDigitalAnalyticsTemplate, DIGITAL_ANALYTICS_TEMPLATE_NAME } from "./digital-analytics-template";
+import { createKfgTemplate, KFG_TEMPLATE_NAME } from "./kfg-template";
 
 /**
  * Uma coluna do Kanban de `/pipeline`. `key` usa os mesmos 4 estágios
@@ -53,6 +54,13 @@ const BEAUTY_SALON_PIPELINE_COLUMNS: PipelineColumnDefinition[] = [
   { key: "AGENDAMENTO_CONCLUIDO", label: "Agendamento Concluído", description: "Atendimento fechado" },
 ];
 
+const KFG_PIPELINE_COLUMNS: PipelineColumnDefinition[] = [
+  { key: "PRIMEIRO_ATENDIMENTO", label: "Primeiro Atendimento", description: "IA qualificando o lead vindo do anúncio" },
+  { key: "CLIENTE_RECORRENTE", label: "Cliente Recorrente", description: "Já conversou antes, voltou pra um novo atendimento" },
+  { key: "AGUARDANDO_HUMANO", label: "Aguardando Consultor", description: "IA encaminhou, esperando um consultor" },
+  { key: "AGENDAMENTO_CONCLUIDO", label: "Negociação Encaminhada", description: "Lead qualificado e encaminhado com sucesso" },
+];
+
 export const TEMPLATE_REGISTRY: TemplateDefinition[] = [
   {
     key: "beauty-salon",
@@ -68,6 +76,14 @@ export const TEMPLATE_REGISTRY: TemplateDefinition[] = [
     description:
       "Diagnóstico comercial gratuito: 6 perguntas de qualificação com IA (nome, segmento, quem atende, CRM, tráfego pago, desafio) e agendamento via webhook (n8n) com o Google Calendar do gestor comercial. Uso interno — nunca liberado para clientes.",
     load: createDigitalAnalyticsTemplate,
+  },
+  {
+    key: "kfg-veiculos",
+    name: KFG_TEMPLATE_NAME,
+    description:
+      "Leads de anúncio de tráfego pago (detecção do veículo por palavra-chave na primeira mensagem) até a qualificação completa: nome, veículo de interesse, forma de negociação (à vista, troca, financiamento) e, no financiamento, restrição bancária + CNH/CPF/nascimento — encaminhado por WhatsApp pro time comercial.",
+    load: createKfgTemplate,
+    pipelineColumns: KFG_PIPELINE_COLUMNS,
   },
 ];
 

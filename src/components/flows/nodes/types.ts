@@ -131,6 +131,18 @@ export type AiResponseData = {
    * enviado normalmente, já que é a ÚNICA fonte daquele texto.
    */
   suppressReplyOnDone?: boolean;
+  /**
+   * Se definido, o motor tenta classificar por código (ver
+   * `classifyAffirmative` em `flow-helpers.ts`) se a resposta MAIS RECENTE
+   * do contato é afirmativa ou negativa a uma pergunta de SIM/NÃO, e injeta
+   * o resultado como dica pronta no prompt — mesmo motivo de
+   * `resolveNomeAniversario`/`recognizeConfirmation`: um node cuja única
+   * tarefa é essa classificação binária mostrou hesitação em teste ao vivo
+   * sempre que o prompt também recebia outras variáveis já confirmadas.
+   * `affirmativeDigit`/`negativeDigit` (opcional) reconhecem a convenção de
+   * pergunta numerada do app (ex: "1 - Sim" / "2 - Não").
+   */
+  resolveAffirmative?: { affirmativeDigit?: string; negativeDigit?: string };
 };
 
 /** Tipo de mensagem interativa: botões simples (até 3) ou lista (até 10 itens). */

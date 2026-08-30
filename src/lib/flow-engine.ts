@@ -44,6 +44,7 @@ import {
   extractTime,
   resolveNomeAniversarioPair,
   isExplicitConfirmation,
+  classifyAffirmative,
 } from "@/lib/templates/flow-helpers";
 import type { ScheduleCheckResult } from "@/lib/templates/flow-helpers";
 
@@ -403,7 +404,19 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
       ? `\n\nRESOLUÇÃO AUTOMÁTICA DE CONFIRMAÇÃO: a resposta mais recente da cliente ("${context.incomingText}") foi reconhecida como uma confirmação afirmativa clara. Se você tinha acabado de mostrar a confirmação dos dados e estava esperando a resposta dela, trate isso como um "sim" — não repita os dados, não peça confirmação de novo, e marque "done": true imediatamente.`
       : "";
 
-  const userContent = `Histórico da conversa até agora (linhas "Cliente:" são mensagens do contato, linhas "Assistente:" são mensagens já enviadas a ele — inclusive por blocos estáticos do fluxo, não só por você):\n${history}${knownVariablesBlock}${numberedChoiceHint}${dateAlreadyConfirmedHint}${dateReferenceHint}${timeReferenceHint}${nomeAniversarioHint}${confirmationHint}`;
+  // Se a resposta mais recente do contato puder ser classificada por código
+  // como afirmativa/negativa (ver `classifyAffirmative`), reforça isso —
+  // mesmo motivo de sempre: um node cuja tarefa é só essa classificação
+  // binária mostrou hesitação em teste ao vivo quando o prompt também
+  // recebia outras variáveis já confirmadas no bloco "DADOS JÁ CONFIRMADOS".
+  const affirmativeResult = data.resolveAffirmative
+    ? classifyAffirmative(context.incomingText ?? "", data.resolveAffirmative)
+    : null;
+  const affirmativeHint = affirmativeResult
+    ? `\n\nRESOLUÇÃO AUTOMÁTICA DE SIM/NÃO: a resposta mais recente da cliente ("${context.incomingText}") já foi classificada por código como "${affirmativeResult}". Use esse valor exato pro campo correspondente, não precisa reinterpretar. Se essa for a única informação que faltava, marque "done": true IMEDIATAMENTE neste turno.`
+    : "";
+
+  const userContent = `Histórico da conversa até agora (linhas "Cliente:" são mensagens do contato, linhas "Assistente:" são mensagens já enviadas a ele — inclusive por blocos estáticos do fluxo, não só por você):\n${history}${knownVariablesBlock}${numberedChoiceHint}${dateAlreadyConfirmedHint}${dateReferenceHint}${timeReferenceHint}${nomeAniversarioHint}${confirmationHint}${affirmativeHint}`;
 
   const client = new OpenAI({ apiKey });
 
@@ -963,6 +976,15 @@ async function runFlowForContact(params: {
       return;
     }
     currentId = trigger.id;
+    // Mesmo na primeiríssima mensagem (ex: texto pré-preenchido vindo de um
+    // anúncio de tráfego pago, tipo "Olá, tenho interesse no Onix"), registra
+    // como `ultima_resposta` — permite que um bloco de Condição logo após o
+    // trigger avalie esse texto (ex: detectar por palavra-chave qual produto
+    // motivou o contato), sem precisar de um node estático "esperando"
+    // resposta no meio do caminho. Nenhum template existente tinha um bloco
+    // de Condição direto após o trigger até agora, então isso não muda nada
+    // pra eles — só passa a estar disponível pra quem precisar.
+    variables.ultima_resposta = effectiveText;
   } else {
     const waitingNode = nodes.find((n) => n.id === currentId);
     if (waitingNode && waitingNode.type !== "aiResponse") {
