@@ -241,7 +241,7 @@ Regras:
 - "reply" não é enviado quando "done": true (o sistema já mostra a próxima etapa sozinho), mas ainda preencha algo breve.
 - Seja calorosa, use poucos emojis, mensagens curtas.`;
 
-const RESTRICAO_SIM_MESSAGE = `Entendi! Mesmo assim, a KFG consegue te auxiliar na compra do seu novo carro — hoje conseguimos viabilizar a venda mesmo com esse detalhe. Vou te encaminhar com um dos nossos consultores pra conversarmos melhor sobre as opções disponíveis pra você. 😊`;
+const RESTRICAO_SIM_MESSAGE = `Entendi! Mesmo assim, a KFG consegue te auxiliar na compra do seu novo carro — hoje conseguimos viabilizar a venda mesmo com esse detalhe. Já estou te encaminhando para um dos nossos consultores, que vai continuar seu atendimento por aqui mesmo. Em breve você será atendido(a)! 🚗😊`;
 
 const RESTRICAO_NAO_MESSAGE = `Ótimo! Com isso, já estamos com 90% de chance de você conseguir seu novo carro. 🎉
 
@@ -451,12 +451,15 @@ const NODES: Node[] = [
       useGlobalPrompt: false,
       customPrompt: AI_RESTRICAO_BANCARIA_PROMPT,
       resolveAffirmative: { affirmativeDigit: "1", negativeDigit: "2" },
+      suppressReplyOnDone: true,
     },
   },
   conditionNode("kfg-cond-restricao", { x: 1300, y: 1260 }, "Possui restrição bancária?", "sim", "EQUALS", "possui_restricao_bancaria"),
 
-  // 3a) Possui restrição — mensagem fixa tranquilizando, encaminha direto.
-  plainTextNode("kfg-restricao-sim", { x: 1180, y: 1320 }, "Restrição SIM — mensagem fixa", RESTRICAO_SIM_MESSAGE, false, false, {
+  // 3a) Possui restrição — mensagem única (tranquiliza + já encerra o
+  // atendimento por IA aqui mesmo, sem passar pelo `kfg-handoff-comercial`
+  // genérico) — evita repetir duas mensagens de encaminhamento seguidas.
+  plainTextNode("kfg-restricao-sim", { x: 1180, y: 1320 }, "Restrição SIM — mensagem fixa (encerra)", RESTRICAO_SIM_MESSAGE, false, true, {
     setVariables: {
       cpf: "Não se aplica",
       data_nascimento: "Não se aplica",
@@ -570,7 +573,7 @@ const EDGES: Edge[] = [
   edge("kfg-e-ai-restricao-cond", "kfg-ai-restricao", "kfg-cond-restricao"),
   edge("kfg-e-cond-restricao-sim", "kfg-cond-restricao", "kfg-restricao-sim", "yes"),
   edge("kfg-e-cond-restricao-nao", "kfg-cond-restricao", "kfg-restricao-nao", "no"),
-  edge("kfg-e-restricao-sim-handoff", "kfg-restricao-sim", "kfg-handoff-comercial"),
+  edge("kfg-e-restricao-sim-alert", "kfg-restricao-sim", "kfg-lead-alert"),
   edge("kfg-e-restricao-nao-ai", "kfg-restricao-nao", "kfg-ai-dados-financiamento"),
   edge("kfg-e-ai-dados-fechamento", "kfg-ai-dados-financiamento", "kfg-financiamento-fechamento"),
   edge("kfg-e-financiamento-fechamento-alert", "kfg-financiamento-fechamento", "kfg-lead-alert"),
