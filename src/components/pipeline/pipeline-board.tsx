@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { formatPhone, cn } from "@/lib/utils";
@@ -102,13 +102,27 @@ export function PipelineBoard({
    */
   templates: PipelineTemplate[];
 }) {
-  const [selectedTemplateKey, setSelectedTemplateKey] = useState(templates[0]?.key ?? "");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Persiste a escolha do funil na URL (?funil=...) em vez de só em state —
+  // sem isso, quem tem acesso a mais de um funil (hoje só o MASTER) via ao
+  // atualizar a página, a seleção sempre voltava pro primeiro template do
+  // registro. Também deixa o link compartilhável/favoritável apontando pro
+  // funil certo.
+  const requestedKey = searchParams.get("funil");
+  const selectedTemplateKey = templates.some((t) => t.key === requestedKey) ? requestedKey! : (templates[0]?.key ?? "");
   const columns = templates.find((t) => t.key === selectedTemplateKey)?.columns ?? templates[0]?.columns ?? [];
+
+  function selectTemplate(key: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("funil", key);
+    router.replace(`/pipeline?${params.toString()}`, { scroll: false });
+  }
 
   const [chats, setChats] = useState(initialChats);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<PipelineStage | null>(null);
-  const router = useRouter();
 
   // Ref espelhando `draggingId` — lida dentro do `setInterval` abaixo, que só
   // roda uma vez (deps vazio) e por isso enxergaria sempre o valor "preso" da
@@ -161,7 +175,7 @@ export function PipelineBoard({
           <span className="text-xs text-muted-foreground">Funil:</span>
           <select
             value={selectedTemplateKey}
-            onChange={(e) => setSelectedTemplateKey(e.target.value)}
+            onChange={(e) => selectTemplate(e.target.value)}
             className="flex h-8 rounded-md border border-border bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
           >
             {templates.map((t) => (
