@@ -205,10 +205,14 @@ const MENU_NEGOCIACAO_RETRY_MESSAGE = `Desculpe, não entendi 🙏 Por favor, re
 
 const AI_TROCA_PROMPT = `Você é a assistente virtual da KFG Veículos. A cliente escolheu negociar o veículo novo dando outro veículo como parte do pagamento (troca), e acabou de receber uma mensagem pedindo os dados do veículo que ela quer dar na troca: modelo, ano, quilometragem e versão.
 
-Sua ÚNICA função aqui é capturar essas informações em \`veiculo_troca_info\` (texto livre, juntando tudo o que ela informou num só resumo, ex: "Gol 2018, 80 mil km, versão Trendline") e preencher \`resumo_ia\` com um resumo curto (1 frase) do atendimento até aqui, citando o veículo de interesse (já está no bloco "DADOS JÁ CONFIRMADOS", chave \`veiculo_interesse\`) e o veículo dado na troca — ex: "Cliente interessada no Onix, quer negociar via troca de um Gol 2018 com 80 mil km."
+Sua ÚNICA função aqui é capturar essas informações em \`veiculo_troca_info\` (texto livre, juntando tudo o que ela informou num só resumo, ex: "Gol 2018, 80 mil km, versão Trendline") e preencher \`resumo_ia\` com um resumo curto (1 frase) do atendimento até aqui.
+
+IMPORTANTE — o veículo NOVO que ela quer comprar (\`veiculo_interesse\`) NÃO é sua responsabilidade aqui, mesmo que apareça vazio ou ausente no bloco "DADOS JÁ CONFIRMADOS": NUNCA pergunte qual é esse veículo, NUNCA peça a versão dele, NUNCA tente completar ou corrigir esse campo — isso já foi tratado (ou intencionalmente pulado) em uma etapa anterior do fluxo. Sua tarefa é só sobre o veículo da TROCA (o que ela está entregando), nunca o que ela quer comprar.
+
+Pro \`resumo_ia\`: se \`veiculo_interesse\` estiver no bloco "DADOS JÁ CONFIRMADOS", cite-o (ex: "Cliente interessada no Onix, quer negociar via troca de um Gol 2018 com 80 mil km."); se NÃO estiver, componha sem mencionar o veículo de interesse (ex: "Cliente quer negociar via troca de um Gol 2018 com 80 mil km — veículo de interesse a confirmar com o consultor.").
 
 Regras:
-- Ela pode responder tudo de uma vez ou aos poucos, em mensagens separadas — peça só o que ainda estiver faltando (modelo, ano, km, versão), nunca repita o que já foi dado.
+- Ela pode responder tudo de uma vez ou aos poucos, em mensagens separadas — peça só o que ainda estiver faltando (modelo, ano, km, versão do veículo DA TROCA), nunca repita o que já foi dado.
 - Assim que tiver pelo menos modelo e ano do veículo da troca (km e versão são bons de ter, mas não trave o atendimento se ela não souber de cabeça), marque "done": true, e NO MESMO JSON o campo "variables" TEM que incluir \`veiculo_troca_info\` E \`resumo_ia\` preenchidos — obrigatório, mesmo que "reply" não seja enviado ao cliente nesse caso (o sistema já mostra a próxima etapa sozinho). Marcar "done": true sem os dois campos nesse mesmo turno é um erro.
 - Se a cliente perguntar algo fora desse escopo, responda brevemente se souber e repita o pedido. NUNCA marque "needsHuman": true só por isso.
 - Seja calorosa, use poucos emojis, mensagens curtas.`;
@@ -220,7 +224,7 @@ const RESTRICAO_BANCARIA_MESSAGE = `Perfeito! Pra seguirmos com o financiamento,
 
 const AI_RESTRICAO_BANCARIA_PROMPT = `Você é a assistente virtual da KFG Veículos. A cliente acabou de receber uma pergunta com duas opções — se ela possui restrição bancária no nome (SPC/Serasa): "1 - Sim" ou "2 - Não".
 
-Sua ÚNICA função aqui é normalizar a resposta dela em \`possui_restricao_bancaria\`, salvando EXATAMENTE o texto "sim" ou "não" (nunca outro valor, nunca em branco).
+Sua ÚNICA função aqui é normalizar a resposta dela em \`possui_restricao_bancaria\`, salvando EXATAMENTE o texto "sim" ou "não" (nunca outro valor, nunca em branco). Ignore qualquer outro campo que apareça vazio ou ausente no bloco "DADOS JÁ CONFIRMADOS" (ex: \`veiculo_interesse\`) — não é sua responsabilidade perguntar ou completar nada além da restrição bancária.
 
 Regras:
 - Você recebe uma dica pronta "RESOLUÇÃO AUTOMÁTICA DE SIM/NÃO" sempre que a resposta puder ser classificada por código — NUNCA classifique sozinha quando essa dica existir, só copie o valor dela pra \`possui_restricao_bancaria\` e marque "done": true IMEDIATAMENTE.
@@ -246,13 +250,15 @@ Sua ÚNICA função aqui é coletar essas 3 informações — elas podem chegar 
 2. CPF → salve em \`cpf\` (o número exatamente como ela informou, com ou sem pontuação).
 3. Data de nascimento → salve em \`data_nascimento\` (a data exatamente como ela informou).
 
+IMPORTANTE — ignore qualquer outro campo que apareça vazio ou ausente no bloco "DADOS JÁ CONFIRMADOS" (ex: \`veiculo_interesse\`): não é sua responsabilidade perguntar ou completar nada além dessas 3 informações.
+
 Regras:
 - Peça SÓ a informação que ainda estiver faltando — nunca repita uma pergunta cuja resposta você já tem, mesmo que tenha vindo numa mensagem anterior separada.
 - ANTES de decidir "done", confira CADA UM dos 3 campos individualmente, um por um (não confie na impressão geral da mensagem):
   1. \`cnh_ativa\` — a mensagem atual (ou o histórico) já deixou isso claro?
   2. \`cpf\` — a mensagem atual (ou o histórico) já tem um número de CPF?
   3. \`data_nascimento\` — a mensagem atual (ou o histórico) já tem uma data de nascimento?
-- Se as 3 respostas acima forem SIM, marque "done": true IMEDIATAMENTE neste turno — não espere um turno a mais, não peça confirmação. NO MESMO JSON, o campo "variables" TEM que incluir os 3 campos (\`cnh_ativa\`, \`cpf\`, \`data_nascimento\`) E TAMBÉM \`resumo_ia\` (um resumo curto, 1 frase, citando o veículo de interesse — bloco "DADOS JÁ CONFIRMADOS", chave \`veiculo_interesse\` — e o serviço: financiamento, sem restrição bancária). Marcar "done": true sem incluir os 4 campos nesse mesmo turno é um erro — não há uma segunda chance depois, a conversa já é encaminhada em seguida. "reply" nesse caso não é enviado ao cliente (o sistema mostra a mensagem de fechamento sozinho), mas ainda assim preencha algo breve.
+- Se as 3 respostas acima forem SIM, marque "done": true IMEDIATAMENTE neste turno — não espere um turno a mais, não peça confirmação. NO MESMO JSON, o campo "variables" TEM que incluir os 3 campos (\`cnh_ativa\`, \`cpf\`, \`data_nascimento\`) E TAMBÉM \`resumo_ia\` (um resumo curto, 1 frase, citando o serviço: financiamento, sem restrição bancária — e o veículo de interesse SÓ se \`veiculo_interesse\` estiver no bloco "DADOS JÁ CONFIRMADOS", senão omita essa parte). Marcar "done": true sem incluir os 4 campos nesse mesmo turno é um erro — não há uma segunda chance depois, a conversa já é encaminhada em seguida. "reply" nesse caso não é enviado ao cliente (o sistema mostra a mensagem de fechamento sozinho), mas ainda assim preencha algo breve.
 - Se qualquer um dos 3 ainda não estiver claro, marque "done": false e peça especificamente o que falta.
 - Se a cliente perguntar algo fora desse escopo, responda brevemente se souber e repita o pedido pelo que falta. NUNCA marque "needsHuman": true só por isso.
 - Seja calorosa, use poucos emojis, mensagens curtas.`;
@@ -326,12 +332,13 @@ const NODES: Node[] = [
   // veio de anúncio (ex: contato espontâneo, "oi"), pula direto pro menu de
   // negociação — perguntar "qual veículo te interessou" nesse caso foi
   // testado ao vivo e considerado desnecessário, o vendedor pode descobrir
-  // isso na negociação mesmo.
+  // isso na negociação mesmo. `veiculo_interesse` fica DE FATO vazio nesse
+  // caminho (a notificação final mostra "—" — ver `interpolateVariables`),
+  // nunca um valor tipo "Não especificado": um placeholder desse tipo,
+  // testado ao vivo, "convidou" um node de IA mais adiante (captura do
+  // veículo da troca) a tentar "completar" o campo sozinho, perguntando
+  // até a versão do carro novo — problema fora do escopo dele.
   conditionNode("kfg-cond-veiculo-detectado", { x: 600, y: 800 }, "Veículo já detectado no anúncio?", "", "EQUALS", "veiculo_anuncio"),
-  plainTextNode("kfg-set-veiculo-nao-especificado", { x: 450, y: 860 }, "Define veículo — não especificado", `(silencioso)`, false, false, {
-    setVariables: { veiculo_interesse: "Não especificado" },
-    skipSend: true,
-  }),
   plainTextNode(
     "kfg-ask-veiculo-especifico",
     { x: 750, y: 860 },
@@ -513,9 +520,8 @@ const EDGES: Edge[] = [
 
   edge("kfg-e-ask-nome-ai", "kfg-ask-nome", "kfg-ai-nome"),
   edge("kfg-e-ai-nome-cond", "kfg-ai-nome", "kfg-cond-veiculo-detectado"),
-  edge("kfg-e-cond-veiculo-yes", "kfg-cond-veiculo-detectado", "kfg-set-veiculo-nao-especificado", "yes"),
+  edge("kfg-e-cond-veiculo-yes", "kfg-cond-veiculo-detectado", "kfg-menu-negociacao", "yes"),
   edge("kfg-e-cond-veiculo-no", "kfg-cond-veiculo-detectado", "kfg-ask-veiculo-especifico", "no"),
-  edge("kfg-e-set-veiculo-nao-especificado-menu", "kfg-set-veiculo-nao-especificado", "kfg-menu-negociacao"),
   edge("kfg-e-ask-veiculo-especifico-ai", "kfg-ask-veiculo-especifico", "kfg-ai-interesse"),
   edge("kfg-e-ai-interesse-menu", "kfg-ai-interesse", "kfg-menu-negociacao"),
 
