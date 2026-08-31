@@ -315,7 +315,10 @@ const NODES: Node[] = [
   // Detecção do veículo por palavra-chave, direto na primeira mensagem —
   // não depende de IA nem de esperar uma nova resposta: se o texto que
   // trouxe a cliente até aqui já cita um veículo do catálogo, grava
-  // `veiculo_anuncio` antes mesmo do cumprimento.
+  // `veiculo_anuncio` antes mesmo do cumprimento. Cada veículo vira uma
+  // mini cadeia OR (`orConditionChain`) testando TODAS as `keywords`
+  // daquele veículo, uma por uma — não só a primeira — antes de cair pro
+  // próximo veículo do catálogo.
   // Grava `veiculo_anuncio` E `veiculo_interesse` juntos, com o MESMO valor
   // — quando o veículo já vem sabido do anúncio, `veiculo_interesse` fica
   // pronto sem precisar perguntar nada (ver comentário de bloco abaixo, na
@@ -323,13 +326,17 @@ const NODES: Node[] = [
   // texto pronto... o fluxo deve pular essa pergunta de qual veículo o
   // cliente tem interesse, pois já iremos colher essa informação na
   // primeira mensagem".
-  ...VEHICLE_CATALOG.flatMap((vehicle, index) => [
-    conditionNode(`kfg-cond-veiculo-${index}`, { x: 300, y: 140 + index * 90 }, `Anúncio menciona ${vehicle.name}?`, vehicle.keywords[0]),
-    plainTextNode(`kfg-set-veiculo-${index}`, { x: 300, y: 145 + index * 90 }, `Grava veículo — ${vehicle.name}`, `(silencioso)`, false, false, {
-      setVariables: { veiculo_anuncio: vehicle.name, veiculo_interesse: vehicle.name },
-      skipSend: true,
-    }),
-  ]),
+  ...VEHICLE_CATALOG.flatMap((vehicle, index) => {
+    const setId = `kfg-set-veiculo-${index}`;
+    const fallbackTarget = index + 1 < VEHICLE_CATALOG.length ? `kfg-cond-veiculo-${index + 1}-1` : "kfg-ask-nome";
+    return [
+      ...orConditionChain(`kfg-cond-veiculo-${index}-`, `Anúncio menciona ${vehicle.name}?`, vehicle.keywords.map((k) => ({ value: k })), setId, fallbackTarget, 140 + index * 90).nodes,
+      plainTextNode(setId, { x: 300, y: 145 + index * 90 }, `Grava veículo — ${vehicle.name}`, `(silencioso)`, false, false, {
+        setVariables: { veiculo_anuncio: vehicle.name, veiculo_interesse: vehicle.name },
+        skipSend: true,
+      }),
+    ];
+  }),
 
   plainTextNode(
     "kfg-ask-nome",
@@ -569,15 +576,18 @@ const NODES: Node[] = [
 ];
 
 const EDGES: Edge[] = [
-  edge("kfg-e-trigger-cond0", "kfg-trigger", "kfg-cond-veiculo-0"),
+  edge("kfg-e-trigger-cond0", "kfg-trigger", "kfg-cond-veiculo-0-1"),
 
-  // Cadeia de detecção de veículo — se nenhum bater, segue direto pra
-  // boas-vindas sem gravar `veiculo_anuncio` (fica vazio, tratado depois).
-  ...VEHICLE_CATALOG.flatMap((_, index) => {
-    const condId = `kfg-cond-veiculo-${index}`;
+  // Cadeia de detecção de veículo — se nenhuma keyword de nenhum veículo
+  // bater, segue direto pra boas-vindas sem gravar `veiculo_anuncio` (fica
+  // vazio, tratado depois).
+  ...VEHICLE_CATALOG.flatMap((vehicle, index) => {
     const setId = `kfg-set-veiculo-${index}`;
-    const nextCondId = index + 1 < VEHICLE_CATALOG.length ? `kfg-cond-veiculo-${index + 1}` : "kfg-ask-nome";
-    return [edge(`kfg-e-${condId}-yes`, condId, setId, "yes"), edge(`kfg-e-${condId}-no`, condId, nextCondId, "no"), edge(`kfg-e-${setId}-next`, setId, "kfg-ask-nome")];
+    const fallbackTarget = index + 1 < VEHICLE_CATALOG.length ? `kfg-cond-veiculo-${index + 1}-1` : "kfg-ask-nome";
+    return [
+      ...orConditionChain(`kfg-cond-veiculo-${index}-`, `Anúncio menciona ${vehicle.name}?`, vehicle.keywords.map((k) => ({ value: k })), setId, fallbackTarget, 140 + index * 90).edges,
+      edge(`kfg-e-${setId}-next`, setId, "kfg-ask-nome"),
+    ];
   }),
 
   edge("kfg-e-ask-nome-ai", "kfg-ask-nome", "kfg-ai-nome"),
