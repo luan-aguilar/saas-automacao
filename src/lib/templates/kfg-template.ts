@@ -475,6 +475,14 @@ const NODES: Node[] = [
     },
   },
   conditionNode("kfg-cond-veiculo-interesse-fin-resultado", { x: 1300, y: 1175 }, "Veículo de interesse foi informado?", "", "EQUALS", "veiculo_interesse"),
+  // Se ela não soube dizer o veículo (needsHuman), o fluxo pula direto pro
+  // handoff sem passar por nenhum node que preencha `resumo_ia` (isso só
+  // acontece nos outros desfechos: restrição sim/não) — sem isso, a
+  // notificação final chegava com "Resumo do Atendimento: —".
+  plainTextNode("kfg-set-resumo-fin-sem-veiculo", { x: 1300, y: 1178 }, "Define resumo — financiamento sem veículo definido", `(silencioso)`, false, false, {
+    setVariables: { resumo_ia: "Cliente interessada em financiamento, ainda não soube informar qual veículo — encaminhado para consultor auxiliar na escolha." },
+    skipSend: true,
+  }),
   plainTextNode("kfg-ask-restricao", { x: 1300, y: 1180 }, "Pergunta restrição bancária", RESTRICAO_BANCARIA_MESSAGE, true),
   {
     id: "kfg-ai-restricao",
@@ -607,7 +615,8 @@ const EDGES: Edge[] = [
   edge("kfg-e-cond-fin-conhecido", "kfg-cond-veiculo-interesse-fin", "kfg-ask-restricao", "no"),
   edge("kfg-e-ask-veiculo-financiamento-ai", "kfg-ask-veiculo-financiamento", "kfg-ai-interesse-financiamento"),
   edge("kfg-e-ai-interesse-financiamento-cond", "kfg-ai-interesse-financiamento", "kfg-cond-veiculo-interesse-fin-resultado"),
-  edge("kfg-e-cond-fin-resultado-vazio", "kfg-cond-veiculo-interesse-fin-resultado", "kfg-handoff-comercial", "yes"),
+  edge("kfg-e-cond-fin-resultado-vazio", "kfg-cond-veiculo-interesse-fin-resultado", "kfg-set-resumo-fin-sem-veiculo", "yes"),
+  edge("kfg-e-set-resumo-fin-sem-veiculo-handoff", "kfg-set-resumo-fin-sem-veiculo", "kfg-handoff-comercial"),
   edge("kfg-e-cond-fin-resultado-preenchido", "kfg-cond-veiculo-interesse-fin-resultado", "kfg-ask-restricao", "no"),
   edge("kfg-e-ask-restricao-ai", "kfg-ask-restricao", "kfg-ai-restricao"),
   edge("kfg-e-ai-restricao-cond", "kfg-ai-restricao", "kfg-cond-restricao"),
