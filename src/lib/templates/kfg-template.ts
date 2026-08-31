@@ -31,22 +31,26 @@
  *   -> Captura do nome (IA dedicada, só isso — mesmo padrão já validado no
  *      Salão de Beleza: node pequeno e focado é muito mais confiável que
  *      pedir pra um node genérico "lembrar" de extrair um campo a mais)
- *   -> Pergunta qual veículo despertou o interesse — texto varia conforme
- *      `veiculo_anuncio` ter sido detectado ou não (dois nodes estáticos,
- *      nunca a IA decidindo o que perguntar), mas SEMPRE pergunta -> IA
- *      dedicada captura `veiculo_interesse` (só marca/modelo, NUNCA
- *      ano/versão/km — isso é assunto pro consultor humano tratar depois).
- *      Se a cliente disser que não sabe qual veículo quer, ou pedir pra ver
- *      o catálogo, a IA marca `needsHuman` e o fluxo desvia direto pra um
- *      handoff dedicado (`kfg-handoff-sem-veiculo`), sem passar pelo menu
- *      de negociação.
  *   -> Menu de negociação (texto fixo, numerado): 1-À vista, 2-Troca,
- *      3-Financiamento, 4-Outros assuntos
+ *      3-Financiamento, 4-Outros assuntos — direto após o nome, SEM
+ *      perguntar qual veículo despertou o interesse aqui. Se o anúncio já
+ *      revelou o veículo (`veiculo_interesse` saiu pronto da detecção por
+ *      palavra-chave), ótimo, já convergimos direto pro encaminhamento
+ *      quando aplicável; se não revelou, a única sub-rota que ainda
+ *      PRECISA saber qual veículo a cliente quer comprar é a de Troca (ver
+ *      item 2 abaixo) — nas demais, o consultor humano resolve isso depois.
  *   -> Cadeia de condições (nome OU número, igual ao menu do Salão de
  *      Beleza) desvia pra 4 sub-fluxos:
  *      1) À VISTA: nada mais a perguntar -> encaminha direto.
  *      2) TROCA: pergunta modelo/ano/km/versão do veículo a dar na troca
- *         (IA dedicada) -> encaminha.
+ *         (IA dedicada) -> SE `veiculo_interesse` ainda estiver vazio
+ *         (não veio de anúncio), pergunta então qual veículo ela quer
+ *         ADQUIRIR (texto fixo referenciando o veículo da troca + IA
+ *         dedicada capturando só marca/modelo, NUNCA ano/versão/km; se a
+ *         cliente não souber ou pedir pra ver o catálogo, a IA marca
+ *         `needsHuman` mas o fluxo converge no mesmo encaminhamento de
+ *         qualquer forma) -> encaminha. Se `veiculo_interesse` já era
+ *         conhecido, pula essa pergunta e encaminha direto.
  *      3) FINANCIAMENTO: pergunta restrição bancária (SIM/NÃO, com um node
  *         de IA pequeno normalizando a resposta — mesmo padrão da sondagem
  *         de química do Salão de Beleza — antes de um bloco de Condição
@@ -148,8 +152,6 @@ const LEAD_NOTIFICATION_MESSAGE = `🔥 *NOVO LEAD QUALIFICADO* 🔥
 
 const HANDOFF_COMERCIAL_MESSAGE = `Perfeito! Já estou te encaminhando para um dos nossos consultores, que vai continuar seu atendimento por aqui mesmo. Em breve você será atendido(a)! 🚗😊`;
 
-const HANDOFF_SEM_VEICULO_MESSAGE = `Sem problemas! Vou te conectar com um dos nossos consultores, que pode te mostrar as opções disponíveis e te ajudar a escolher o veículo ideal pra você. 😊`;
-
 const HANDOFF_POS_VENDA_MESSAGE = `Só um momento! Vou te direcionar para o nosso time de pós-venda, que vai continuar seu atendimento por aqui mesmo. 😊`;
 
 /**
@@ -168,24 +170,25 @@ Regras:
 - Seja calorosa, use poucos emojis, mensagens curtas.`;
 
 /**
- * Prompt do node dedicado de captura do veículo de interesse. Recebe o
- * catálogo de veículos como referência (pra normalizar o nome, ex: cliente
- * escreve "onix ltz" e ela salva "Onix") e o veículo já detectado no
- * anúncio (se houver), pra saber quando a cliente está apenas confirmando o
- * mesmo veículo em vez de citar um novo.
+ * Prompt do node dedicado de captura do veículo de interesse. Usado só no
+ * caminho de Troca, depois de já sabermos os dados do veículo que a
+ * cliente quer dar como entrada — ou seja, chega aqui só quando o veículo
+ * de interesse NÃO veio pronto de um anúncio (senão essa pergunta nem
+ * aparece, ver comentário de bloco no topo do arquivo). Recebe o catálogo
+ * de veículos como referência pra normalizar o nome (ex: cliente escreve
+ * "onix ltz" e ela salva "Onix").
  */
 function buildAiInteresseVeiculoPrompt(): string {
   const catalogList = VEHICLE_CATALOG.map((v) => v.name).join(", ");
-  return `Você é a assistente virtual da KFG Veículos. A cliente acabou de receber uma pergunta sobre qual veículo despertou o interesse dela — a pergunta pode ter mencionado um veículo específico (o do anúncio que ela clicou) perguntando se é só esse ou se ela quer ver outros também, ou pode ter sido uma pergunta aberta (quando não sabíamos ainda qual veículo era).
+  return `Você é a assistente virtual da KFG Veículos. A cliente acabou de receber uma pergunta aberta sobre qual veículo ela quer adquirir.
 
 Catálogo de veículos que a KFG trabalha atualmente (use pra normalizar o nome que a cliente disser, ex: "onix ltz" -> "Onix" — mas se ela citar um modelo que não está nesta lista, registre exatamente o que ela disse, sem inventar nem forçar pra um destes): ${catalogList}.
 
 Sua ÚNICA função aqui é determinar \`veiculo_interesse\` (o veículo final que ela quer negociar). MARCA (ex: "Chevrolet", "Volkswagen") e MODELO (ex: "Onix", "Jetta") são coisas diferentes — trate cada caso assim:
 
 1. Se ela já disser um MODELO específico (com ou sem a marca junto, ex: "Onix" ou "Chevrolet Onix"), isso já é suficiente pra prosseguir: salve em \`veiculo_interesse\` e marque "done": true IMEDIATAMENTE. NUNCA peça detalhes a mais (ano, versão, cor, quilometragem etc.) — isso é assunto pro consultor humano tratar depois, não seu.
-2. Se ela confirmar que é o mesmo veículo do anúncio (bloco "DADOS JÁ CONFIRMADOS", chave \`veiculo_anuncio\` — ex: "só esse", "sim", "isso mesmo"), copie o valor de \`veiculo_anuncio\` pra \`veiculo_interesse\` e marque "done": true.
-3. Se ela disser SÓ a marca, sem modelo nenhum (ex: "quero uma Chevrolet", "queria ver Fiat"), NÃO aceite isso como suficiente ainda — pergunte gentilmente qual modelo dessa marca ela tem em mente. Marque "done": false.
-4. Se ela disser que não sabe qual veículo quer, ou pedir pra ver o catálogo/opções disponíveis, marque "needsHuman": true (NÃO preencha \`veiculo_interesse\` nesse caso) — seu "reply" deve ser breve, avisando que você vai conectá-la com um consultor que pode mostrar as opções.
+2. Se ela disser SÓ a marca, sem modelo nenhum (ex: "quero uma Chevrolet", "queria ver Fiat"), NÃO aceite isso como suficiente ainda — pergunte gentilmente qual modelo dessa marca ela tem em mente. Marque "done": false.
+3. Se ela disser que não sabe qual veículo quer, ou pedir pra ver o catálogo/opções disponíveis, marque "needsHuman": true (NÃO preencha \`veiculo_interesse\` nesse caso) — seu "reply" deve ser breve, avisando que você vai conectá-la com um consultor que pode mostrar as opções.
 
 Regras:
 - Quando marcar "done": true, NO MESMO JSON o campo "variables" TEM que incluir \`veiculo_interesse\` preenchido — obrigatório, mesmo que "reply" não seja enviado ao cliente nesse caso (o sistema mostra a próxima etapa sozinho). Marcar "done": true sem incluir \`veiculo_interesse\` é um erro.
@@ -193,7 +196,7 @@ Regras:
 - Seja calorosa, use poucos emojis, mensagens curtas.`;
 }
 
-const MENU_NEGOCIACAO_MESSAGE = `Legal! Agora preciso entender como você prefere negociar o veículo:
+const MENU_NEGOCIACAO_MESSAGE = `Legal! Agora preciso entender qual assunto você gostaria de tratar:
 
 1️⃣ Compra à vista
 2️⃣ Troca por outro veículo
@@ -306,10 +309,17 @@ const NODES: Node[] = [
   // não depende de IA nem de esperar uma nova resposta: se o texto que
   // trouxe a cliente até aqui já cita um veículo do catálogo, grava
   // `veiculo_anuncio` antes mesmo do cumprimento.
+  // Grava `veiculo_anuncio` E `veiculo_interesse` juntos, com o MESMO valor
+  // — quando o veículo já vem sabido do anúncio, `veiculo_interesse` fica
+  // pronto sem precisar perguntar nada (ver comentário de bloco abaixo, na
+  // transição pra troca): o pedido explícito foi "se o usuário vier com um
+  // texto pronto... o fluxo deve pular essa pergunta de qual veículo o
+  // cliente tem interesse, pois já iremos colher essa informação na
+  // primeira mensagem".
   ...VEHICLE_CATALOG.flatMap((vehicle, index) => [
     conditionNode(`kfg-cond-veiculo-${index}`, { x: 300, y: 140 + index * 90 }, `Anúncio menciona ${vehicle.name}?`, vehicle.keywords[0]),
     plainTextNode(`kfg-set-veiculo-${index}`, { x: 300, y: 145 + index * 90 }, `Grava veículo — ${vehicle.name}`, `(silencioso)`, false, false, {
-      setVariables: { veiculo_anuncio: vehicle.name },
+      setVariables: { veiculo_anuncio: vehicle.name, veiculo_interesse: vehicle.name },
       skipSend: true,
     }),
   ]),
@@ -333,46 +343,11 @@ const NODES: Node[] = [
     },
   },
 
-  // Sempre pergunta qual veículo despertou o interesse — texto varia
-  // conforme o anúncio já ter revelado um modelo específico ou não, mas
-  // SEMPRE um texto FIXO (nunca a IA decidindo o que perguntar). A captura
-  // (`kfg-ai-interesse`) só exige marca+modelo — nunca ano/versão/km, isso
-  // é assunto pro consultor humano depois — e, se a cliente não souber ou
-  // quiser ver o catálogo, marca `needsHuman` e o fluxo desvia direto pra
-  // um atendente (`kfg-cond-veiculo-interesse-ok` abaixo), sem passar pelo
-  // menu de negociação.
-  conditionNode("kfg-cond-veiculo-detectado", { x: 600, y: 800 }, "Veículo já detectado no anúncio?", "", "EQUALS", "veiculo_anuncio"),
-  plainTextNode(
-    "kfg-ask-veiculo-generico",
-    { x: 450, y: 860 },
-    "Pergunta veículo — genérico",
-    `Prazer, {{lead_nome}}! Qual veículo despertou seu interesse? Pode me dizer a marca e/ou o modelo. 🚗`,
-    true
-  ),
-  plainTextNode(
-    "kfg-ask-veiculo-especifico",
-    { x: 750, y: 860 },
-    "Pergunta veículo — do anúncio",
-    `Prazer, {{lead_nome}}! Vi que você tem interesse no {{veiculo_anuncio}}. Você gostaria de olhar só esse modelo, ou também tem interesse em outros? Se sim, me diga qual! 😊`,
-    true
-  ),
-  {
-    id: "kfg-ai-interesse",
-    type: "aiResponse",
-    position: { x: 600, y: 920 },
-    data: {
-      label: "Captura (IA) — veículo de interesse",
-      useGlobalPrompt: false,
-      customPrompt: buildAiInteresseVeiculoPrompt(),
-      suppressReplyOnDone: true,
-    },
-  },
-  // Se a IA marcou "needsHuman" (não sabia, ou pediu catálogo),
-  // `veiculo_interesse` fica vazio — desvia pra um handoff dedicado em vez
-  // de seguir pro menu de negociação sem saber o que ela quer.
-  conditionNode("kfg-cond-veiculo-interesse-ok", { x: 600, y: 950 }, "Veículo de interesse foi definido?", "", "EQUALS", "veiculo_interesse"),
-  plainTextNode("kfg-handoff-sem-veiculo", { x: 450, y: 990 }, "Encaminhar — sem veículo definido", HANDOFF_SEM_VEICULO_MESSAGE, false, true),
-
+  // Vai direto do nome pro menu de negociação — nenhuma pergunta de veículo
+  // aqui, nem quando o anúncio já revelou um (`veiculo_interesse` já saiu
+  // pronto da detecção acima) nem quando não revelou (nesse caso a pergunta
+  // só aparece DEPOIS, dentro do caminho de Troca — ver comentário de bloco
+  // mais abaixo, perto de `kfg-ai-troca`).
   plainTextNode("kfg-menu-negociacao", { x: 600, y: 980 }, "Menu de negociação", MENU_NEGOCIACAO_MESSAGE, true),
 
   // Cadeia de condições do menu — nome OU número, mesmo princípio já
@@ -430,6 +405,33 @@ const NODES: Node[] = [
       label: "Captura (IA) — veículo da troca",
       useGlobalPrompt: false,
       customPrompt: AI_TROCA_PROMPT,
+      suppressReplyOnDone: true,
+    },
+  },
+  // Só pergunta qual veículo ela quer ADQUIRIR aqui, depois de já saber os
+  // dados do veículo da troca — E só se ainda não soubermos (`veiculo_interesse`
+  // já vem pronto quando veio de anúncio, ver comentário de bloco na
+  // detecção por palavra-chave). Reutiliza a mesma captura (`kfg-ai-interesse`)
+  // usada em qualquer lugar que precise disso — mesma lógica (só marca/modelo,
+  // nunca versão; só marca sozinha pede o modelo; não sabe/quer catálogo ->
+  // needsHuman) — mas aqui os dois desfechos (done ou needsHuman) convergem
+  // no mesmo encaminhamento, já que o caminho de Troca sempre termina lá.
+  conditionNode("kfg-cond-veiculo-interesse-conhecido", { x: 1100, y: 1260 }, "Veículo de interesse já é conhecido?", "", "EQUALS", "veiculo_interesse"),
+  plainTextNode(
+    "kfg-ask-veiculo-apos-troca",
+    { x: 1100, y: 1300 },
+    "Pergunta veículo de interesse (após troca)",
+    `Perfeito! Agora temos o seu {{veiculo_troca_info}}. 😊 E qual é o veículo que você está interessado(a) em adquirir?`,
+    true
+  ),
+  {
+    id: "kfg-ai-interesse",
+    type: "aiResponse",
+    position: { x: 1100, y: 1340 },
+    data: {
+      label: "Captura (IA) — veículo de interesse (pós-troca)",
+      useGlobalPrompt: false,
+      customPrompt: buildAiInteresseVeiculoPrompt(),
       suppressReplyOnDone: true,
     },
   },
@@ -534,15 +536,7 @@ const EDGES: Edge[] = [
   }),
 
   edge("kfg-e-ask-nome-ai", "kfg-ask-nome", "kfg-ai-nome"),
-  edge("kfg-e-ai-nome-cond", "kfg-ai-nome", "kfg-cond-veiculo-detectado"),
-  edge("kfg-e-cond-veiculo-yes", "kfg-cond-veiculo-detectado", "kfg-ask-veiculo-generico", "yes"),
-  edge("kfg-e-cond-veiculo-no", "kfg-cond-veiculo-detectado", "kfg-ask-veiculo-especifico", "no"),
-  edge("kfg-e-ask-veiculo-generico-ai", "kfg-ask-veiculo-generico", "kfg-ai-interesse"),
-  edge("kfg-e-ask-veiculo-especifico-ai", "kfg-ask-veiculo-especifico", "kfg-ai-interesse"),
-  edge("kfg-e-ai-interesse-cond", "kfg-ai-interesse", "kfg-cond-veiculo-interesse-ok"),
-  edge("kfg-e-cond-interesse-ok-yes", "kfg-cond-veiculo-interesse-ok", "kfg-handoff-sem-veiculo", "yes"),
-  edge("kfg-e-cond-interesse-ok-no", "kfg-cond-veiculo-interesse-ok", "kfg-menu-negociacao", "no"),
-  edge("kfg-e-handoff-sem-veiculo-alert", "kfg-handoff-sem-veiculo", "kfg-lead-alert"),
+  edge("kfg-e-ai-nome-menu", "kfg-ai-nome", "kfg-menu-negociacao"),
 
   edge("kfg-e-menu-cond-avista", "kfg-menu-negociacao", "kfg-cond-avista-1"),
   edge("kfg-e-menuretry-cond-avista", "kfg-menu-negociacao-retry", "kfg-cond-avista-1"),
@@ -564,7 +558,11 @@ const EDGES: Edge[] = [
   // Caminho 2: troca -> pergunta -> IA -> fechamento compartilhado.
   edge("kfg-e-set-troca-ask", "kfg-set-troca", "kfg-ask-troca"),
   edge("kfg-e-ask-troca-ai", "kfg-ask-troca", "kfg-ai-troca"),
-  edge("kfg-e-ai-troca-handoff", "kfg-ai-troca", "kfg-handoff-comercial"),
+  edge("kfg-e-ai-troca-cond", "kfg-ai-troca", "kfg-cond-veiculo-interesse-conhecido"),
+  edge("kfg-e-cond-interesse-desconhecido", "kfg-cond-veiculo-interesse-conhecido", "kfg-ask-veiculo-apos-troca", "yes"),
+  edge("kfg-e-cond-interesse-conhecido", "kfg-cond-veiculo-interesse-conhecido", "kfg-handoff-comercial", "no"),
+  edge("kfg-e-ask-veiculo-apos-troca-ai", "kfg-ask-veiculo-apos-troca", "kfg-ai-interesse"),
+  edge("kfg-e-ai-interesse-handoff", "kfg-ai-interesse", "kfg-handoff-comercial"),
 
   // Caminho 3: financiamento -> restrição -> IA -> condição -> 2 sub-casos.
   edge("kfg-e-set-financiamento-ask", "kfg-set-financiamento", "kfg-ask-restricao"),
