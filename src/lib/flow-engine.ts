@@ -30,6 +30,7 @@ import type {
   WebhookData,
   GoogleCalendarSlotsData,
   GoogleCalendarBookData,
+  KeywordCatalogData,
 } from "@/components/flows/nodes/types";
 import { getAlertRecipients } from "@/components/flows/nodes/types";
 import { prisma } from "@/lib/prisma";
@@ -633,6 +634,41 @@ async function executeGoogleCalendarBookNode(data: GoogleCalendarBookData, conte
 }
 
 /**
+ * Executa o bloco "Catálogo de Palavras-chave": procura, na variável de
+ * origem (`sourceVariable`, padrão `ultima_resposta`), alguma palavra-chave
+ * de algum item do catálogo — o primeiro item cuja lista de `keywords` bater
+ * (comparação por "contém", sem diferenciar maiúsculas/minúsculas) grava seu
+ * `name` em TODAS as `targetVariables` configuradas. Não bifurca o fluxo
+ * (sempre segue pela única aresta de saída, tenha batido ou não) — pensado
+ * pra rodar logo após o Trigger e alimentar `veiculo_anuncio`/
+ * `veiculo_interesse` (ou equivalente) ANTES de perguntas de IA mais à
+ * frente decidirem se precisam ou não perguntar aquilo de novo.
+ *
+ * Existe pra dar a um operador SEM acesso ao código (ex: o dono de um
+ * cliente que usa este fluxo) uma forma de manter esse catálogo atualizado
+ * sozinho pela tela do Construtor de Fluxos — sem isso, cada troca de
+ * veículo anunciado dependia de editar o template em TypeScript e publicar
+ * de novo.
+ */
+function executeKeywordCatalogNode(data: KeywordCatalogData, context: FlowContext): StepResult {
+  const sourceValue = (context.variables[data.sourceVariable || "ultima_resposta"] ?? "").toLowerCase();
+
+  const match = data.entries.find((entry) =>
+    entry.keywords.some((keyword) => keyword.trim() !== "" && sourceValue.includes(keyword.trim().toLowerCase()))
+  );
+
+  if (match) {
+    for (const targetVariable of data.targetVariables) {
+      if (targetVariable.trim()) {
+        context.variables[targetVariable.trim()] = match.name;
+      }
+    }
+  }
+
+  return { ok: true, next: "continue" };
+}
+
+/**
  * Dispatcher central do motor de fluxo. Recebe um node (já no formato salvo
  * em `Flow.nodes`) e o contexto atual da conversa, executa a ação
  * correspondente ao tipo do bloco e devolve como o orquestrador deve
@@ -666,6 +702,9 @@ export async function executeFlowNode(node: FlowNode, context: FlowContext): Pro
 
     case "googleCalendarBook":
       return executeGoogleCalendarBookNode(node.data, context);
+
+    case "keywordCatalog":
+      return executeKeywordCatalogNode(node.data, context);
 
     default:
       return { ok: true, next: "continue" };

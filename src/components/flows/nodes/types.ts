@@ -223,6 +223,26 @@ export type ConditionData = {
   value: string;
 };
 
+/** Um item do catálogo — ex: um veículo anunciado, com as formas de reconhecê-lo na mensagem. */
+export type KeywordCatalogEntry = {
+  /** Identificador interno do item (uso da UI, não aparece pro contato). */
+  id: string;
+  /** Valor gravado nas variáveis de destino quando este item é reconhecido (ex: "Ferrari"). */
+  name: string;
+  /** Palavras/trechos que, se algum aparecer na variável de origem (comparação sem diferenciar maiúsculas/minúsculas), reconhecem este item. */
+  keywords: string[];
+};
+
+export type KeywordCatalogData = {
+  label: string;
+  /** Variável onde procurar as palavras-chave (padrão: "ultima_resposta" — a mensagem mais recente do contato). */
+  sourceVariable?: string;
+  /** Variáveis do fluxo que recebem o `name` do item reconhecido (ex: ["veiculo_anuncio", "veiculo_interesse"]). */
+  targetVariables: string[];
+  /** Itens do catálogo, testados na ordem — o primeiro que bater define o resultado. */
+  entries: KeywordCatalogEntry[];
+};
+
 export type AlertNotificationData = {
   label: string;
   /**
@@ -298,6 +318,7 @@ export type AlertNotificationNode = Node<AlertNotificationData, "alertNotificati
 export type WebhookNode = Node<WebhookData, "webhook">;
 export type GoogleCalendarSlotsNode = Node<GoogleCalendarSlotsData, "googleCalendarSlots">;
 export type GoogleCalendarBookNode = Node<GoogleCalendarBookData, "googleCalendarBook">;
+export type KeywordCatalogNode = Node<KeywordCatalogData, "keywordCatalog">;
 
 export type FlowNode =
   | TriggerNode
@@ -307,7 +328,8 @@ export type FlowNode =
   | AlertNotificationNode
   | GoogleCalendarSlotsNode
   | GoogleCalendarBookNode
-  | WebhookNode;
+  | WebhookNode
+  | KeywordCatalogNode;
 
 /** Extrai os nomes de variáveis {{assim}} usados em um texto (sem duplicatas). */
 export function extractVariableNames(text: string): string[] {

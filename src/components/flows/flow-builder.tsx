@@ -31,6 +31,7 @@ import { AlertNotificationNodeComponent } from "./nodes/alert-notification-node"
 import { WebhookNodeComponent } from "./nodes/webhook-node";
 import { GoogleCalendarSlotsNodeComponent } from "./nodes/google-calendar-slots-node";
 import { GoogleCalendarBookNodeComponent } from "./nodes/google-calendar-book-node";
+import { KeywordCatalogNodeComponent } from "./nodes/keyword-catalog-node";
 import { getTemplateDefinition } from "@/lib/templates/registry";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +46,7 @@ const nodeTypes: NodeTypes = {
   webhook: WebhookNodeComponent,
   googleCalendarSlots: GoogleCalendarSlotsNodeComponent,
   googleCalendarBook: GoogleCalendarBookNodeComponent,
+  keywordCatalog: KeywordCatalogNodeComponent,
 };
 
 const edgeTypes: EdgeTypes = {
@@ -94,6 +96,13 @@ function defaultDataFor(type: string): Record<string, unknown> {
         eventTitleTemplate: "Diagnóstico Comercial - {{lead_nome}}",
         eventDescriptionTemplate: "Agendado automaticamente pelo robô.",
         sheetRowTemplate: "",
+      };
+    case "keywordCatalog":
+      return {
+        label: "Catálogo de Palavras-chave",
+        sourceVariable: "ultima_resposta",
+        targetVariables: [""],
+        entries: [],
       };
     default:
       return { label: "Bloco" };

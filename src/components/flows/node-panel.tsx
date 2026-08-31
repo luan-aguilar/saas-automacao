@@ -1,6 +1,6 @@
 "use client";
 
-import { Zap, Sparkles, MessageSquare, GitFork, BellRing, Webhook, CalendarSearch, CalendarCheck2, X } from "lucide-react";
+import { Zap, Sparkles, MessageSquare, GitFork, BellRing, Webhook, CalendarSearch, CalendarCheck2, Tags, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -14,7 +14,8 @@ const paletteItems: {
     | "alertNotification"
     | "webhook"
     | "googleCalendarSlots"
-    | "googleCalendarBook";
+    | "googleCalendarBook"
+    | "keywordCatalog";
   label: string;
   description: string;
   icon: LucideIcon;
@@ -47,6 +48,13 @@ const paletteItems: {
     description: "Direciona o fluxo pela resposta",
     icon: GitFork,
     colorClass: "bg-amber-600",
+  },
+  {
+    type: "keywordCatalog",
+    label: "Catálogo de Palavras-chave",
+    description: "Reconhece um item (ex: produto de um anúncio) pela mensagem e grava numa variável",
+    icon: Tags,
+    colorClass: "bg-fuchsia-600",
   },
   {
     type: "alertNotification",

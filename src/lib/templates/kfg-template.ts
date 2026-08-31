@@ -315,28 +315,36 @@ const NODES: Node[] = [
   // Detecção do veículo por palavra-chave, direto na primeira mensagem —
   // não depende de IA nem de esperar uma nova resposta: se o texto que
   // trouxe a cliente até aqui já cita um veículo do catálogo, grava
-  // `veiculo_anuncio` antes mesmo do cumprimento. Cada veículo vira uma
-  // mini cadeia OR (`orConditionChain`) testando TODAS as `keywords`
-  // daquele veículo, uma por uma — não só a primeira — antes de cair pro
-  // próximo veículo do catálogo.
-  // Grava `veiculo_anuncio` E `veiculo_interesse` juntos, com o MESMO valor
-  // — quando o veículo já vem sabido do anúncio, `veiculo_interesse` fica
-  // pronto sem precisar perguntar nada (ver comentário de bloco abaixo, na
-  // transição pra troca): o pedido explícito foi "se o usuário vier com um
-  // texto pronto... o fluxo deve pular essa pergunta de qual veículo o
-  // cliente tem interesse, pois já iremos colher essa informação na
-  // primeira mensagem".
-  ...VEHICLE_CATALOG.flatMap((vehicle, index) => {
-    const setId = `kfg-set-veiculo-${index}`;
-    const fallbackTarget = index + 1 < VEHICLE_CATALOG.length ? `kfg-cond-veiculo-${index + 1}-1` : "kfg-ask-nome";
-    return [
-      ...orConditionChain(`kfg-cond-veiculo-${index}-`, `Anúncio menciona ${vehicle.name}?`, vehicle.keywords.map((k) => ({ value: k })), setId, fallbackTarget, 140 + index * 90).nodes,
-      plainTextNode(setId, { x: 300, y: 145 + index * 90 }, `Grava veículo — ${vehicle.name}`, `(silencioso)`, false, false, {
-        setVariables: { veiculo_anuncio: vehicle.name, veiculo_interesse: vehicle.name },
-        skipSend: true,
-      }),
-    ];
-  }),
+  // `veiculo_anuncio` E `veiculo_interesse` (mesmo valor nas duas) antes
+  // mesmo do cumprimento — quando o veículo já vem sabido do anúncio,
+  // `veiculo_interesse` fica pronto sem precisar perguntar nada (ver
+  // comentário de bloco mais abaixo, na transição pra troca): o pedido
+  // explícito foi "se o usuário vier com um texto pronto... o fluxo deve
+  // pular essa pergunta de qual veículo o cliente tem interesse, pois já
+  // iremos colher essa informação na primeira mensagem".
+  //
+  // Usa o bloco padrão "Catálogo de Palavras-chave" (mesmo tipo de node
+  // disponível pra qualquer usuário arrastar no Construtor de Fluxos) em
+  // vez de uma cadeia de condições fixa no código — assim o dono da KFG
+  // consegue cadastrar/trocar os veículos anunciados sozinho, direto na
+  // tela, sem precisar pedir pra mexer no template e publicar de novo. O
+  // catálogo abaixo é só o valor INICIAL (mesmo placeholder de sempre); ao
+  // reaproveitar este template pra abrir uma flow nova, ou depois de editado
+  // manualmente pelo cliente na UI, o conteúdo deste node pode divergir de
+  // `VEHICLE_CATALOG` (usado só como referência de normalização nos prompts
+  // de IA mais abaixo, ver `buildAiInteresseVeiculoPrompt`) — tudo bem,
+  // são independentes por design.
+  {
+    id: "kfg-catalogo-veiculos",
+    type: "keywordCatalog",
+    position: { x: 300, y: 140 },
+    data: {
+      label: "Catálogo de veículos anunciados",
+      sourceVariable: "ultima_resposta",
+      targetVariables: ["veiculo_anuncio", "veiculo_interesse"],
+      entries: VEHICLE_CATALOG.map((vehicle, index) => ({ id: `veiculo_${index}`, name: vehicle.name, keywords: vehicle.keywords })),
+    },
+  },
 
   plainTextNode(
     "kfg-ask-nome",
@@ -576,19 +584,8 @@ const NODES: Node[] = [
 ];
 
 const EDGES: Edge[] = [
-  edge("kfg-e-trigger-cond0", "kfg-trigger", "kfg-cond-veiculo-0-1"),
-
-  // Cadeia de detecção de veículo — se nenhuma keyword de nenhum veículo
-  // bater, segue direto pra boas-vindas sem gravar `veiculo_anuncio` (fica
-  // vazio, tratado depois).
-  ...VEHICLE_CATALOG.flatMap((vehicle, index) => {
-    const setId = `kfg-set-veiculo-${index}`;
-    const fallbackTarget = index + 1 < VEHICLE_CATALOG.length ? `kfg-cond-veiculo-${index + 1}-1` : "kfg-ask-nome";
-    return [
-      ...orConditionChain(`kfg-cond-veiculo-${index}-`, `Anúncio menciona ${vehicle.name}?`, vehicle.keywords.map((k) => ({ value: k })), setId, fallbackTarget, 140 + index * 90).edges,
-      edge(`kfg-e-${setId}-next`, setId, "kfg-ask-nome"),
-    ];
-  }),
+  edge("kfg-e-trigger-catalogo", "kfg-trigger", "kfg-catalogo-veiculos"),
+  edge("kfg-e-catalogo-ask-nome", "kfg-catalogo-veiculos", "kfg-ask-nome"),
 
   edge("kfg-e-ask-nome-ai", "kfg-ask-nome", "kfg-ai-nome"),
   edge("kfg-e-ai-nome-menu", "kfg-ai-nome", "kfg-menu-negociacao"),

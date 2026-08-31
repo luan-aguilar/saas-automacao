@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { extractVariableNames, MAX_ALERT_RECIPIENTS } from "./nodes/types";
 import { X, Trash2, AlertTriangle, Plus, List, MessageSquareText } from "lucide-react";
-import type { StaticMessageListItem } from "./nodes/types";
+import type { StaticMessageListItem, KeywordCatalogEntry } from "./nodes/types";
 
 export const MAX_STATIC_MESSAGE_BUTTONS = 3;
 export const MAX_STATIC_MESSAGE_LIST_ITEMS = 10;
@@ -420,6 +420,82 @@ export function NodeConfigDrawer({
           </>
         )}
 
+        {node.type === "keywordCatalog" && (
+          <>
+            <p className="text-xs text-muted-foreground">
+              Cadastre itens (ex: cada veículo anunciado) e as palavras que identificam cada um. Ao chegar
+              neste bloco, o robô olha a variável de origem abaixo e, se ela CONTIVER alguma das palavras-chave
+              de um item, grava o nome desse item nas variáveis de destino — sem precisar de IA nem de mexer em
+              código. Se nenhuma bater, o fluxo segue em frente sem gravar nada.
+            </p>
+
+            <div className="space-y-1.5">
+              <Label>Variável de origem (onde procurar as palavras-chave)</Label>
+              <Input
+                value={data.sourceVariable ?? "ultima_resposta"}
+                onChange={(e) => update({ sourceVariable: e.target.value })}
+                placeholder="ultima_resposta"
+              />
+              <p className="text-xs text-muted-foreground">
+                Normalmente <code>ultima_resposta</code> — a mensagem mais recente do contato. Só mude se este
+                bloco não estiver logo após o Trigger.
+              </p>
+            </div>
+
+            {(() => {
+              const targetVariables: string[] = data.targetVariables && data.targetVariables.length > 0 ? data.targetVariables : [""];
+
+              function setTargets(next: string[]) {
+                update({ targetVariables: next });
+              }
+
+              return (
+                <div className="space-y-1.5">
+                  <Label>Gravar resultado em (uma ou mais variáveis)</Label>
+                  <div className="space-y-2">
+                    {targetVariables.map((name: string, index: number) => (
+                      <div key={index} className="flex items-center gap-1.5">
+                        <Input
+                          value={name}
+                          onChange={(e) => {
+                            const next = [...targetVariables];
+                            next[index] = e.target.value;
+                            setTargets(next);
+                          }}
+                          placeholder="ex: veiculo_interesse"
+                        />
+                        {targetVariables.length > 1 && (
+                          <button
+                            type="button"
+                            title="Remover esta variável"
+                            onClick={() => setTargets(targetVariables.filter((_, i) => i !== index))}
+                            className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setTargets([...targetVariables, ""])}>
+                    <Plus className="h-3.5 w-3.5" />
+                    Adicionar variável
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Use mais de uma quando o mesmo resultado precisa alimentar dois campos ao mesmo tempo (ex:
+                    <code> veiculo_anuncio</code> e <code>veiculo_interesse</code>).
+                  </p>
+                </div>
+              );
+            })()}
+
+            <KeywordCatalogEntriesField
+              entries={data.entries ?? []}
+              onChange={(entries) => update({ entries })}
+            />
+          </>
+        )}
+
         <Button variant="destructive" size="sm" className="w-full" onClick={() => onDelete(node.id)}>
           <Trash2 className="h-3.5 w-3.5" />
           Remover bloco
@@ -507,6 +583,65 @@ function StaticMessageButtonsField({
           </span>
         </span>
       </p>
+    </div>
+  );
+}
+
+function KeywordCatalogEntriesField({
+  entries,
+  onChange,
+}: {
+  entries: KeywordCatalogEntry[];
+  onChange: (entries: KeywordCatalogEntry[]) => void;
+}) {
+  function updateEntryAt(index: number, patch: Partial<KeywordCatalogEntry>) {
+    onChange(entries.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)));
+  }
+
+  function removeEntryAt(index: number) {
+    onChange(entries.filter((_, i) => i !== index));
+  }
+
+  function addEntry() {
+    onChange([...entries, { id: `item_${Date.now()}`, name: "", keywords: [] }]);
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <Label>Itens do catálogo</Label>
+
+      <div className="space-y-2">
+        {entries.map((entry, index) => (
+          <div key={entry.id} className="space-y-1.5 rounded-md border border-border p-2">
+            <div className="flex items-center gap-2">
+              <Input
+                value={entry.name}
+                onChange={(e) => updateEntryAt(index, { name: e.target.value })}
+                placeholder={`Nome do item ${index + 1} (ex: Ferrari)`}
+              />
+              <Button type="button" variant="ghost" size="icon" title="Remover item" onClick={() => removeEntryAt(index)}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <Input
+              value={entry.keywords.join(", ")}
+              onChange={(e) =>
+                updateEntryAt(index, {
+                  keywords: e.target.value.split(",").map((k) => k.trim()).filter((k) => k.length > 0),
+                })
+              }
+              placeholder="Palavras-chave separadas por vírgula (ex: ferrari, 488, cavallino)"
+            />
+          </div>
+        ))}
+
+        {entries.length === 0 && <p className="text-xs text-muted-foreground">Nenhum item cadastrado ainda.</p>}
+      </div>
+
+      <Button type="button" variant="outline" size="sm" onClick={addEntry} className="w-full">
+        <Plus className="h-3.5 w-3.5" />
+        Adicionar item ao catálogo
+      </Button>
     </div>
   );
 }
