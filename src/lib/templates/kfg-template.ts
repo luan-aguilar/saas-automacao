@@ -31,14 +31,15 @@
  *   -> Captura do nome (IA dedicada, só isso — mesmo padrão já validado no
  *      Salão de Beleza: node pequeno e focado é muito mais confiável que
  *      pedir pra um node genérico "lembrar" de extrair um campo a mais)
- *   -> Se `veiculo_anuncio` foi detectado: pergunta se é só esse modelo ou
- *      se ela também tem interesse em outros (texto fixo) -> IA dedicada
- *      captura `veiculo_interesse` (mesmo ou outro modelo).
- *      Se NÃO foi detectado (ex: contato espontâneo, "oi"): pula essa
- *      pergunta inteira e vai direto pro menu de negociação —
- *      `veiculo_interesse` fica como "Não especificado" (testado ao vivo:
- *      perguntar "qual veículo te interessou" pra quem não veio de anúncio
- *      foi considerado desnecessário, o vendedor descobre isso na negociação).
+ *   -> Pergunta qual veículo despertou o interesse — texto varia conforme
+ *      `veiculo_anuncio` ter sido detectado ou não (dois nodes estáticos,
+ *      nunca a IA decidindo o que perguntar), mas SEMPRE pergunta -> IA
+ *      dedicada captura `veiculo_interesse` (só marca/modelo, NUNCA
+ *      ano/versão/km — isso é assunto pro consultor humano tratar depois).
+ *      Se a cliente disser que não sabe qual veículo quer, ou pedir pra ver
+ *      o catálogo, a IA marca `needsHuman` e o fluxo desvia direto pra um
+ *      handoff dedicado (`kfg-handoff-sem-veiculo`), sem passar pelo menu
+ *      de negociação.
  *   -> Menu de negociação (texto fixo, numerado): 1-À vista, 2-Troca,
  *      3-Financiamento, 4-Outros assuntos
  *   -> Cadeia de condições (nome OU número, igual ao menu do Salão de
@@ -147,6 +148,8 @@ const LEAD_NOTIFICATION_MESSAGE = `🔥 *NOVO LEAD QUALIFICADO* 🔥
 
 const HANDOFF_COMERCIAL_MESSAGE = `Perfeito! Já estou te encaminhando para um dos nossos consultores, que vai continuar seu atendimento por aqui mesmo. Em breve você será atendido(a)! 🚗😊`;
 
+const HANDOFF_SEM_VEICULO_MESSAGE = `Sem problemas! Vou te conectar com um dos nossos consultores, que pode te mostrar as opções disponíveis e te ajudar a escolher o veículo ideal pra você. 😊`;
+
 const HANDOFF_POS_VENDA_MESSAGE = `Só um momento! Vou te direcionar para o nosso time de pós-venda, que vai continuar seu atendimento por aqui mesmo. 😊`;
 
 /**
@@ -161,7 +164,7 @@ Sua ÚNICA função aqui é capturar o nome completo (ou como ela preferir se id
 
 Regras:
 - Assim que tiver o nome, marque "done": true IMEDIATAMENTE, e NO MESMO JSON o campo "variables" TEM que incluir \`lead_nome\` preenchido — isso é obrigatório, mesmo que "reply" não seja enviado ao cliente nesse caso (o sistema já cuida da próxima mensagem sozinho). Marcar "done": true sem incluir \`lead_nome\` nesse mesmo turno é um erro — não há uma segunda chance de preenchê-lo depois.
-- Se a cliente perguntar ou comentar algo fora desse escopo antes de dizer o nome (preço, dúvida sobre o veículo): responda brevemente se souber, e repita o pedido do nome. NUNCA marque "needsHuman": true só por isso.
+- Se a cliente perguntar ou comentar algo sem relação com o atendimento da KFG antes de dizer o nome: não responda o conteúdo — diga com gentileza que você só está autorizada a falar sobre assuntos da KFG, e repita o pedido do nome. NUNCA marque "needsHuman": true só por isso.
 - Seja calorosa, use poucos emojis, mensagens curtas.`;
 
 /**
@@ -177,14 +180,16 @@ function buildAiInteresseVeiculoPrompt(): string {
 
 Catálogo de veículos que a KFG trabalha atualmente (use pra normalizar o nome que a cliente disser, ex: "onix ltz" -> "Onix" — mas se ela citar um modelo que não está nesta lista, registre exatamente o que ela disse, sem inventar nem forçar pra um destes): ${catalogList}.
 
-Sua ÚNICA função aqui é determinar \`veiculo_interesse\` (o veículo final que ela quer negociar):
-- Se o histórico já mostrar um veículo detectado do anúncio (bloco "DADOS JÁ CONFIRMADOS", chave \`veiculo_anuncio\`) e a cliente confirmar que é só esse mesmo (ex: "só esse", "sim", "isso mesmo"), copie o valor de \`veiculo_anuncio\` pra \`veiculo_interesse\`.
-- Se ela citar um veículo diferente (do catálogo ou não), salve esse novo veículo em \`veiculo_interesse\`.
-- Se não havia veículo detectado do anúncio e ela agora disser qual é, salve em \`veiculo_interesse\`.
+Sua ÚNICA função aqui é determinar \`veiculo_interesse\` (o veículo final que ela quer negociar). MARCA (ex: "Chevrolet", "Volkswagen") e MODELO (ex: "Onix", "Jetta") são coisas diferentes — trate cada caso assim:
+
+1. Se ela já disser um MODELO específico (com ou sem a marca junto, ex: "Onix" ou "Chevrolet Onix"), isso já é suficiente pra prosseguir: salve em \`veiculo_interesse\` e marque "done": true IMEDIATAMENTE. NUNCA peça detalhes a mais (ano, versão, cor, quilometragem etc.) — isso é assunto pro consultor humano tratar depois, não seu.
+2. Se ela confirmar que é o mesmo veículo do anúncio (bloco "DADOS JÁ CONFIRMADOS", chave \`veiculo_anuncio\` — ex: "só esse", "sim", "isso mesmo"), copie o valor de \`veiculo_anuncio\` pra \`veiculo_interesse\` e marque "done": true.
+3. Se ela disser SÓ a marca, sem modelo nenhum (ex: "quero uma Chevrolet", "queria ver Fiat"), NÃO aceite isso como suficiente ainda — pergunte gentilmente qual modelo dessa marca ela tem em mente. Marque "done": false.
+4. Se ela disser que não sabe qual veículo quer, ou pedir pra ver o catálogo/opções disponíveis, marque "needsHuman": true (NÃO preencha \`veiculo_interesse\` nesse caso) — seu "reply" deve ser breve, avisando que você vai conectá-la com um consultor que pode mostrar as opções.
 
 Regras:
-- Assim que tiver \`veiculo_interesse\` definido, marque "done": true IMEDIATAMENTE, e NO MESMO JSON o campo "variables" TEM que incluir \`veiculo_interesse\` preenchido — isso é obrigatório, mesmo que "reply" não seja enviado ao cliente nesse caso (o sistema já mostra a próxima etapa sozinho). Marcar "done": true sem incluir \`veiculo_interesse\` nesse mesmo turno é um erro.
-- Se a resposta for ambígua ou não deixar claro qual veículo (ex: só "sim" sem contexto nenhum de qual veículo ela está confirmando, e não havia veículo do anúncio pra usar como referência), peça gentilmente pra ela dizer o nome do veículo. Marque "done": false nesse caso.
+- Quando marcar "done": true, NO MESMO JSON o campo "variables" TEM que incluir \`veiculo_interesse\` preenchido — obrigatório, mesmo que "reply" não seja enviado ao cliente nesse caso (o sistema mostra a próxima etapa sozinho). Marcar "done": true sem incluir \`veiculo_interesse\` é um erro.
+- Se a cliente perguntar ou comentar algo sem relação nenhuma com veículos/negociação, não responda o conteúdo — diga com gentileza que você só está autorizada a falar sobre assuntos da KFG, e repita o pedido do veículo. Isso NUNCA é motivo pra marcar "needsHuman": true.
 - Seja calorosa, use poucos emojis, mensagens curtas.`;
 }
 
@@ -214,7 +219,7 @@ Pro \`resumo_ia\`: se \`veiculo_interesse\` estiver no bloco "DADOS JÁ CONFIRMA
 Regras:
 - Ela pode responder tudo de uma vez ou aos poucos, em mensagens separadas — peça só o que ainda estiver faltando (modelo, ano, km, versão do veículo DA TROCA), nunca repita o que já foi dado.
 - Assim que tiver pelo menos modelo e ano do veículo da troca (km e versão são bons de ter, mas não trave o atendimento se ela não souber de cabeça), marque "done": true, e NO MESMO JSON o campo "variables" TEM que incluir \`veiculo_troca_info\` E \`resumo_ia\` preenchidos — obrigatório, mesmo que "reply" não seja enviado ao cliente nesse caso (o sistema já mostra a próxima etapa sozinho). Marcar "done": true sem os dois campos nesse mesmo turno é um erro.
-- Se a cliente perguntar algo fora desse escopo, responda brevemente se souber e repita o pedido. NUNCA marque "needsHuman": true só por isso.
+- Se a cliente perguntar ou comentar algo sem relação com o veículo da troca: não responda o conteúdo — diga com gentileza que você só está autorizada a falar sobre assuntos da KFG, e repita o pedido. NUNCA marque "needsHuman": true só por isso.
 - Seja calorosa, use poucos emojis, mensagens curtas.`;
 
 const RESTRICAO_BANCARIA_MESSAGE = `Perfeito! Pra seguirmos com o financiamento, me diz uma coisa: você possui alguma restrição bancária no seu nome (SPC/Serasa)?
@@ -229,6 +234,7 @@ Sua ÚNICA função aqui é normalizar a resposta dela em \`possui_restricao_ban
 Regras:
 - Você recebe uma dica pronta "RESOLUÇÃO AUTOMÁTICA DE SIM/NÃO" sempre que a resposta puder ser classificada por código — NUNCA classifique sozinha quando essa dica existir, só copie o valor dela pra \`possui_restricao_bancaria\` e marque "done": true IMEDIATAMENTE.
 - Se NÃO houver essa dica (resposta ambígua demais pro código reconhecer), tente você mesma reconhecer variações como "sim"/"tenho"/"infelizmente sim" = "sim", e "não"/"não tenho"/"limpo" = "não". Se ainda assim não ficar claro, peça gentilmente pra ela confirmar com "sim" ou "não" — marque "done": false nesse caso.
+- Se a cliente perguntar ou comentar algo sem relação com a restrição bancária: não responda o conteúdo — diga com gentileza que você só está autorizada a falar sobre assuntos da KFG, e repita a pergunta de sim/não. NUNCA marque "needsHuman": true só por isso.
 - "reply" não é enviado quando "done": true (o sistema já mostra a próxima etapa sozinho), mas ainda preencha algo breve.
 - Seja calorosa, use poucos emojis, mensagens curtas.`;
 
@@ -260,7 +266,7 @@ Regras:
   3. \`data_nascimento\` — a mensagem atual (ou o histórico) já tem uma data de nascimento?
 - Se as 3 respostas acima forem SIM, marque "done": true IMEDIATAMENTE neste turno — não espere um turno a mais, não peça confirmação. NO MESMO JSON, o campo "variables" TEM que incluir os 3 campos (\`cnh_ativa\`, \`cpf\`, \`data_nascimento\`) E TAMBÉM \`resumo_ia\` (um resumo curto, 1 frase, citando o serviço: financiamento, sem restrição bancária — e o veículo de interesse SÓ se \`veiculo_interesse\` estiver no bloco "DADOS JÁ CONFIRMADOS", senão omita essa parte). Marcar "done": true sem incluir os 4 campos nesse mesmo turno é um erro — não há uma segunda chance depois, a conversa já é encaminhada em seguida. "reply" nesse caso não é enviado ao cliente (o sistema mostra a mensagem de fechamento sozinho), mas ainda assim preencha algo breve.
 - Se qualquer um dos 3 ainda não estiver claro, marque "done": false e peça especificamente o que falta.
-- Se a cliente perguntar algo fora desse escopo, responda brevemente se souber e repita o pedido pelo que falta. NUNCA marque "needsHuman": true só por isso.
+- Se a cliente perguntar ou comentar algo sem relação com essas 3 informações: não responda o conteúdo — diga com gentileza que você só está autorizada a falar sobre assuntos da KFG, e repita o pedido pelo que falta. NUNCA marque "needsHuman": true só por isso.
 - Seja calorosa, use poucos emojis, mensagens curtas.`;
 
 const FINANCIAMENTO_FECHAMENTO_MESSAGE = `Obrigado! Estou encaminhando agora mesmo para um dos nossos consultores — ele vai te ligar pra agendar sua visita. O café é por nossa conta, rs. Tenha um ótimo dia! ☕😊`;
@@ -327,18 +333,22 @@ const NODES: Node[] = [
     },
   },
 
-  // Se o anúncio já revelou um veículo específico, confirma se é só esse ou
-  // se ela tem interesse em outros (pedido original do dono da KFG). Se NÃO
-  // veio de anúncio (ex: contato espontâneo, "oi"), pula direto pro menu de
-  // negociação — perguntar "qual veículo te interessou" nesse caso foi
-  // testado ao vivo e considerado desnecessário, o vendedor pode descobrir
-  // isso na negociação mesmo. `veiculo_interesse` fica DE FATO vazio nesse
-  // caminho (a notificação final mostra "—" — ver `interpolateVariables`),
-  // nunca um valor tipo "Não especificado": um placeholder desse tipo,
-  // testado ao vivo, "convidou" um node de IA mais adiante (captura do
-  // veículo da troca) a tentar "completar" o campo sozinho, perguntando
-  // até a versão do carro novo — problema fora do escopo dele.
+  // Sempre pergunta qual veículo despertou o interesse — texto varia
+  // conforme o anúncio já ter revelado um modelo específico ou não, mas
+  // SEMPRE um texto FIXO (nunca a IA decidindo o que perguntar). A captura
+  // (`kfg-ai-interesse`) só exige marca+modelo — nunca ano/versão/km, isso
+  // é assunto pro consultor humano depois — e, se a cliente não souber ou
+  // quiser ver o catálogo, marca `needsHuman` e o fluxo desvia direto pra
+  // um atendente (`kfg-cond-veiculo-interesse-ok` abaixo), sem passar pelo
+  // menu de negociação.
   conditionNode("kfg-cond-veiculo-detectado", { x: 600, y: 800 }, "Veículo já detectado no anúncio?", "", "EQUALS", "veiculo_anuncio"),
+  plainTextNode(
+    "kfg-ask-veiculo-generico",
+    { x: 450, y: 860 },
+    "Pergunta veículo — genérico",
+    `Prazer, {{lead_nome}}! Qual veículo despertou seu interesse? Pode me dizer a marca e/ou o modelo. 🚗`,
+    true
+  ),
   plainTextNode(
     "kfg-ask-veiculo-especifico",
     { x: 750, y: 860 },
@@ -357,6 +367,11 @@ const NODES: Node[] = [
       suppressReplyOnDone: true,
     },
   },
+  // Se a IA marcou "needsHuman" (não sabia, ou pediu catálogo),
+  // `veiculo_interesse` fica vazio — desvia pra um handoff dedicado em vez
+  // de seguir pro menu de negociação sem saber o que ela quer.
+  conditionNode("kfg-cond-veiculo-interesse-ok", { x: 600, y: 950 }, "Veículo de interesse foi definido?", "", "EQUALS", "veiculo_interesse"),
+  plainTextNode("kfg-handoff-sem-veiculo", { x: 450, y: 990 }, "Encaminhar — sem veículo definido", HANDOFF_SEM_VEICULO_MESSAGE, false, true),
 
   plainTextNode("kfg-menu-negociacao", { x: 600, y: 980 }, "Menu de negociação", MENU_NEGOCIACAO_MESSAGE, true),
 
@@ -520,10 +535,14 @@ const EDGES: Edge[] = [
 
   edge("kfg-e-ask-nome-ai", "kfg-ask-nome", "kfg-ai-nome"),
   edge("kfg-e-ai-nome-cond", "kfg-ai-nome", "kfg-cond-veiculo-detectado"),
-  edge("kfg-e-cond-veiculo-yes", "kfg-cond-veiculo-detectado", "kfg-menu-negociacao", "yes"),
+  edge("kfg-e-cond-veiculo-yes", "kfg-cond-veiculo-detectado", "kfg-ask-veiculo-generico", "yes"),
   edge("kfg-e-cond-veiculo-no", "kfg-cond-veiculo-detectado", "kfg-ask-veiculo-especifico", "no"),
+  edge("kfg-e-ask-veiculo-generico-ai", "kfg-ask-veiculo-generico", "kfg-ai-interesse"),
   edge("kfg-e-ask-veiculo-especifico-ai", "kfg-ask-veiculo-especifico", "kfg-ai-interesse"),
-  edge("kfg-e-ai-interesse-menu", "kfg-ai-interesse", "kfg-menu-negociacao"),
+  edge("kfg-e-ai-interesse-cond", "kfg-ai-interesse", "kfg-cond-veiculo-interesse-ok"),
+  edge("kfg-e-cond-interesse-ok-yes", "kfg-cond-veiculo-interesse-ok", "kfg-handoff-sem-veiculo", "yes"),
+  edge("kfg-e-cond-interesse-ok-no", "kfg-cond-veiculo-interesse-ok", "kfg-menu-negociacao", "no"),
+  edge("kfg-e-handoff-sem-veiculo-alert", "kfg-handoff-sem-veiculo", "kfg-lead-alert"),
 
   edge("kfg-e-menu-cond-avista", "kfg-menu-negociacao", "kfg-cond-avista-1"),
   edge("kfg-e-menuretry-cond-avista", "kfg-menu-negociacao-retry", "kfg-cond-avista-1"),
