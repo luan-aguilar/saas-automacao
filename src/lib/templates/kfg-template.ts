@@ -36,9 +36,10 @@
  *      perguntar qual veículo despertou o interesse aqui. Se o anúncio já
  *      revelou o veículo (`veiculo_interesse` saiu pronto da detecção por
  *      palavra-chave), ótimo, já convergimos direto pro encaminhamento
- *      quando aplicável; se não revelou, a única sub-rota que ainda
- *      PRECISA saber qual veículo a cliente quer comprar é a de Troca (ver
- *      item 2 abaixo) — nas demais, o consultor humano resolve isso depois.
+ *      quando aplicável; se não revelou, as duas sub-rotas que ainda
+ *      PRECISAM saber qual veículo a cliente quer comprar são Troca (ver
+ *      item 2 abaixo) e Financiamento (ver item 3) — em À Vista e em
+ *      Outros Assuntos o consultor humano resolve isso depois.
  *   -> Cadeia de condições (nome OU número, igual ao menu do Salão de
  *      Beleza) desvia pra 4 sub-fluxos:
  *      1) À VISTA: nada mais a perguntar -> encaminha direto.
@@ -51,11 +52,18 @@
  *         `needsHuman` mas o fluxo converge no mesmo encaminhamento de
  *         qualquer forma) -> encaminha. Se `veiculo_interesse` já era
  *         conhecido, pula essa pergunta e encaminha direto.
- *      3) FINANCIAMENTO: pergunta restrição bancária (SIM/NÃO, com um node
- *         de IA pequeno normalizando a resposta — mesmo padrão da sondagem
- *         de química do Salão de Beleza — antes de um bloco de Condição
- *         desviar deterministicamente):
- *         - SIM -> mensagem fixa tranquilizando -> encaminha direto.
+ *      3) FINANCIAMENTO: SE `veiculo_interesse` ainda estiver vazio,
+ *         pergunta primeiro qual veículo ela quer financiar (mesma IA
+ *         dedicada usada na Troca — só marca/modelo; se ela não souber ou
+ *         pedir pra ver o catálogo, marca `needsHuman` e o fluxo encerra
+ *         direto pro comercial, SEM perguntar mais nada de financiamento).
+ *         Se ela informou o veículo (ou já era conhecido), segue pra
+ *         restrição bancária (SIM/NÃO, com um node de IA pequeno
+ *         normalizando a resposta — mesmo padrão da sondagem de química do
+ *         Salão de Beleza — antes de um bloco de Condição desviar
+ *         deterministicamente):
+ *         - SIM -> mensagem única tranquilizando + já encerra o
+ *           atendimento por IA (sem passar pelo handoff genérico).
  *         - NÃO -> pergunta CNH ativa + CPF + data de nascimento juntos
  *           (IA dedicada, tolera qualquer ordem/tudo de uma vez, mesmo
  *           padrão da sondagem capilar) -> mensagem fixa de fechamento ->
@@ -170,13 +178,13 @@ Regras:
 - Seja calorosa, use poucos emojis, mensagens curtas.`;
 
 /**
- * Prompt do node dedicado de captura do veículo de interesse. Usado só no
- * caminho de Troca, depois de já sabermos os dados do veículo que a
- * cliente quer dar como entrada — ou seja, chega aqui só quando o veículo
- * de interesse NÃO veio pronto de um anúncio (senão essa pergunta nem
- * aparece, ver comentário de bloco no topo do arquivo). Recebe o catálogo
- * de veículos como referência pra normalizar o nome (ex: cliente escreve
- * "onix ltz" e ela salva "Onix").
+ * Prompt do node dedicado de captura do veículo de interesse. Reutilizado
+ * em dois pontos do fluxo — Troca (depois de já saber os dados do veículo
+ * dado como entrada) e Financiamento (logo ao entrar nesse caminho) — mas
+ * só chega a ser perguntado quando `veiculo_interesse` NÃO veio pronto de
+ * um anúncio (senão essa pergunta nem aparece, ver comentário de bloco no
+ * topo do arquivo). Recebe o catálogo de veículos como referência pra
+ * normalizar o nome (ex: cliente escreve "onix ltz" e ela salva "Onix").
  */
 function buildAiInteresseVeiculoPrompt(): string {
   const catalogList = VEHICLE_CATALOG.map((v) => v.name).join(", ");
@@ -262,13 +270,12 @@ Sua ÚNICA função aqui é coletar essas 3 informações — elas podem chegar 
 IMPORTANTE — ignore qualquer outro campo que apareça vazio ou ausente no bloco "DADOS JÁ CONFIRMADOS" (ex: \`veiculo_interesse\`): não é sua responsabilidade perguntar ou completar nada além dessas 3 informações.
 
 Regras:
-- Peça SÓ a informação que ainda estiver faltando — nunca repita uma pergunta cuja resposta você já tem, mesmo que tenha vindo numa mensagem anterior separada.
-- ANTES de decidir "done", confira CADA UM dos 3 campos individualmente, um por um (não confie na impressão geral da mensagem):
-  1. \`cnh_ativa\` — a mensagem atual (ou o histórico) já deixou isso claro?
-  2. \`cpf\` — a mensagem atual (ou o histórico) já tem um número de CPF?
-  3. \`data_nascimento\` — a mensagem atual (ou o histórico) já tem uma data de nascimento?
-- Se as 3 respostas acima forem SIM, marque "done": true IMEDIATAMENTE neste turno — não espere um turno a mais, não peça confirmação. NO MESMO JSON, o campo "variables" TEM que incluir os 3 campos (\`cnh_ativa\`, \`cpf\`, \`data_nascimento\`) E TAMBÉM \`resumo_ia\` (um resumo curto, 1 frase, citando o serviço: financiamento, sem restrição bancária — e o veículo de interesse SÓ se \`veiculo_interesse\` estiver no bloco "DADOS JÁ CONFIRMADOS", senão omita essa parte). Marcar "done": true sem incluir os 4 campos nesse mesmo turno é um erro — não há uma segunda chance depois, a conversa já é encaminhada em seguida. "reply" nesse caso não é enviado ao cliente (o sistema mostra a mensagem de fechamento sozinho), mas ainda assim preencha algo breve.
-- Se qualquer um dos 3 ainda não estiver claro, marque "done": false e peça especificamente o que falta.
+- CRÍTICO — em TODO turno, mesmo quando "done" ainda for false porque falta alguma das 3 informações: o campo "variables" da sua resposta TEM que incluir todo campo (\`cnh_ativa\`, \`cpf\`, \`data_nascimento\`) que você já tiver certeza, mesmo que a coleta como um todo ainda não tenha terminado. NUNCA "segure" um campo já confirmado pra só incluir ele no turno final — se você não incluir um campo assim que tiver certeza dele, ele se perde, e você vai acabar perguntando de novo por engano no próximo turno.
+- Verifique cada campo NESTA ORDEM: primeiro o bloco "DADOS JÁ CONFIRMADOS" (se o campo já estiver lá, é porque um turno anterior já confirmou — copie o valor, NUNCA pergunte de novo, mesmo que a mensagem atual não fale nada sobre isso); só se não estiver lá, procure na mensagem atual e no histórico.
+- Peça SÓ a informação que ainda estiver faltando de acordo com a checagem acima — nunca repita uma pergunta cuja resposta já está em "DADOS JÁ CONFIRMADOS" ou já veio numa mensagem anterior, mesmo que tenha chegado junto com outro assunto ou de um jeito indireto (ex: "não quero atrasar, nasci em 10/02" conta como data de nascimento).
+- ANTES de decidir "done", confira CADA UM dos 3 campos individualmente, um por um (\`cnh_ativa\`, \`cpf\`, \`data_nascimento\` — nessa ordem, sempre olhando primeiro pra "DADOS JÁ CONFIRMADOS" como explicado acima).
+- Se as 3 respostas acima forem SIM, marque "done": true IMEDIATAMENTE neste turno — não espere um turno a mais, não peça confirmação. NO MESMO JSON, o campo "variables" TEM que incluir os 3 campos (\`cnh_ativa\`, \`cpf\`, \`data_nascimento\`) E TAMBÉM \`resumo_ia\` (um resumo curto, 1 frase, citando o serviço: financiamento, sem restrição bancária — e o veículo de interesse SÓ se \`veiculo_interesse\` estiver no bloco "DADOS JÁ CONFIRMADOS", senão omita essa parte) — os 4 campos são obrigatórios nesse turno, nenhum deles opcional. Marcar "done": true sem incluir os 4 campos nesse mesmo turno é um erro — não há uma segunda chance depois, a conversa já é encaminhada em seguida. "reply" nesse caso não é enviado ao cliente (o sistema mostra a mensagem de fechamento sozinho), mas ainda assim preencha algo breve.
+- Se qualquer um dos 3 ainda não estiver claro, marque "done": false e peça especificamente só o que falta (nunca repita os campos que já constam em "DADOS JÁ CONFIRMADOS" ou que você acabou de confirmar neste mesmo turno).
 - Se a cliente perguntar ou comentar algo sem relação com essas 3 informações: não responda o conteúdo — diga com gentileza que você só está autorizada a falar sobre assuntos da KFG, e repita o pedido pelo que falta. NUNCA marque "needsHuman": true só por isso.
 - Seja calorosa, use poucos emojis, mensagens curtas.`;
 
@@ -436,11 +443,38 @@ const NODES: Node[] = [
     },
   },
 
-  // ===== CAMINHO 3: FINANCIAMENTO — restrição bancária, depois CNH/CPF/nascimento. =====
+  // ===== CAMINHO 3: FINANCIAMENTO — veículo de interesse (se ainda não
+  // souber), restrição bancária, depois CNH/CPF/nascimento. =====
   plainTextNode("kfg-set-financiamento", { x: 1300, y: 1140 }, "Define serviço — financiamento", `(silencioso)`, false, false, {
     setVariables: { servico_procurado: "Financiamento" },
     skipSend: true,
   }),
+  // Só pergunta qual veículo ela quer financiar se ainda não soubermos
+  // (`veiculo_interesse` já vem pronto quando veio de anúncio). Depois de
+  // perguntar, checa de novo: se a IA marcou `needsHuman` (cliente não sabe
+  // ou quer ver o catálogo), `veiculo_interesse` continua vazio — nesse
+  // caso encerra direto pro comercial, sem seguir com as perguntas de
+  // financiamento. Se ela respondeu normalmente, segue o fluxo.
+  conditionNode("kfg-cond-veiculo-interesse-fin", { x: 1300, y: 1150 }, "Veículo de interesse já é conhecido? (financiamento)", "", "EQUALS", "veiculo_interesse"),
+  plainTextNode(
+    "kfg-ask-veiculo-financiamento",
+    { x: 1300, y: 1160 },
+    "Pergunta veículo de interesse (financiamento)",
+    `Perfeito! Antes de seguirmos com o financiamento, me conta: qual veículo você tem interesse em comprar? 🚗`,
+    true
+  ),
+  {
+    id: "kfg-ai-interesse-financiamento",
+    type: "aiResponse",
+    position: { x: 1300, y: 1170 },
+    data: {
+      label: "Captura (IA) — veículo de interesse (financiamento)",
+      useGlobalPrompt: false,
+      customPrompt: buildAiInteresseVeiculoPrompt(),
+      suppressReplyOnDone: true,
+    },
+  },
+  conditionNode("kfg-cond-veiculo-interesse-fin-resultado", { x: 1300, y: 1175 }, "Veículo de interesse foi informado?", "", "EQUALS", "veiculo_interesse"),
   plainTextNode("kfg-ask-restricao", { x: 1300, y: 1180 }, "Pergunta restrição bancária", RESTRICAO_BANCARIA_MESSAGE, true),
   {
     id: "kfg-ai-restricao",
@@ -568,7 +602,13 @@ const EDGES: Edge[] = [
   edge("kfg-e-ai-interesse-handoff", "kfg-ai-interesse", "kfg-handoff-comercial"),
 
   // Caminho 3: financiamento -> restrição -> IA -> condição -> 2 sub-casos.
-  edge("kfg-e-set-financiamento-ask", "kfg-set-financiamento", "kfg-ask-restricao"),
+  edge("kfg-e-set-financiamento-cond", "kfg-set-financiamento", "kfg-cond-veiculo-interesse-fin"),
+  edge("kfg-e-cond-fin-desconhecido", "kfg-cond-veiculo-interesse-fin", "kfg-ask-veiculo-financiamento", "yes"),
+  edge("kfg-e-cond-fin-conhecido", "kfg-cond-veiculo-interesse-fin", "kfg-ask-restricao", "no"),
+  edge("kfg-e-ask-veiculo-financiamento-ai", "kfg-ask-veiculo-financiamento", "kfg-ai-interesse-financiamento"),
+  edge("kfg-e-ai-interesse-financiamento-cond", "kfg-ai-interesse-financiamento", "kfg-cond-veiculo-interesse-fin-resultado"),
+  edge("kfg-e-cond-fin-resultado-vazio", "kfg-cond-veiculo-interesse-fin-resultado", "kfg-handoff-comercial", "yes"),
+  edge("kfg-e-cond-fin-resultado-preenchido", "kfg-cond-veiculo-interesse-fin-resultado", "kfg-ask-restricao", "no"),
   edge("kfg-e-ask-restricao-ai", "kfg-ask-restricao", "kfg-ai-restricao"),
   edge("kfg-e-ai-restricao-cond", "kfg-ai-restricao", "kfg-cond-restricao"),
   edge("kfg-e-cond-restricao-sim", "kfg-cond-restricao", "kfg-restricao-sim", "yes"),
