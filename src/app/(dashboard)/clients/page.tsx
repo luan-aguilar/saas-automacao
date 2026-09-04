@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getConnectionState } from "@/lib/evolution-api";
+import { syncConnectionState } from "@/lib/whatsapp-service";
 import { ClientTable } from "@/components/clients/client-table";
 
 export default async function ClientsPage() {
@@ -20,8 +22,33 @@ export default async function ClientsPage() {
       status: true,
       mustChangePassword: true,
       createdAt: true,
-      whatsappConnection: { select: { status: true, phoneNumber: true } },
+      whatsappConnection: true,
     },
+  });
+
+  // `WhatsappConnection.status` só era corrigido de verdade quando a Evolution
+  // API conseguia entregar o evento CONNECTION_UPDATE pro nosso webhook — em
+  // uma API não-oficial (Baileys) isso às vezes falha silenciosamente, e o
+  // MASTER via um status desatualizado nesta lista (ex: cliente conectado de
+  // verdade aparecendo como "DISCONNECTED"). Igual ao que `GET
+  // /api/whatsapp/status` já faz pro próprio tenant, consultamos a Evolution
+  // API ao vivo pra cada cliente com instância pareada sempre que o MASTER
+  // abre esta tela — `allSettled` pra uma Evolution API lenta/fora do ar não
+  // travar a lista inteira, cada cliente mantém o último status conhecido se
+  // a checagem dele falhar.
+  const withLiveStatus = await Promise.allSettled(
+    clients.map(async (client) => {
+      const connection = client.whatsappConnection;
+      if (!connection?.externalSessionId) return client;
+      const state = await getConnectionState(connection.externalSessionId);
+      const synced = await syncConnectionState(client.id, connection, state);
+      return { ...client, whatsappConnection: synced };
+    })
+  );
+
+  const clientsWithLiveStatus = clients.map((client, i) => {
+    const result = withLiveStatus[i];
+    return result.status === "fulfilled" ? result.value : client;
   });
 
   return (
@@ -34,7 +61,7 @@ export default async function ClientsPage() {
         </p>
       </div>
       <ClientTable
-        initialClients={clients.map((c) => ({ ...c, createdAt: c.createdAt.toISOString() }))}
+        initialClients={clientsWithLiveStatus.map((c) => ({ ...c, createdAt: c.createdAt.toISOString() }))}
       />
     </div>
   );
