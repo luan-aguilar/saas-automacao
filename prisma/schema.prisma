@@ -41,6 +41,16 @@ enum WhatsappStatus {
   ERROR
 }
 
+// EVOLUTION = pareamento não-oficial via QR Code (Baileys/Evolution API,
+// ver evolution-api.ts) — todos os tenants até 2026-09-04.
+// CLOUD_API = API oficial do WhatsApp Business Platform da Meta (Graph API,
+// ver whatsapp-cloud-api.ts) — primeiro caso de uso: KFG, cujo número foi
+// migrado pra lá por outro serviço, incompatível com sessão não-oficial.
+enum WhatsappProvider {
+  EVOLUTION
+  CLOUD_API
+}
+
 enum ChatStatus {
   OPEN
   CLOSED
@@ -210,16 +220,28 @@ model WhatsappConnection {
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  provider WhatsappProvider @default(EVOLUTION)
+
   status      WhatsappStatus @default(DISCONNECTED)
   phoneNumber String?
 
   // QR code atual (data URL base64), atualizado pelo serviço externo (Baileys/whatsapp-web.js)
   // via webhook -> POST /api/whatsapp/qr
+  // Só usado quando provider = EVOLUTION.
   qrCode      String? @db.Text
   qrExpiresAt DateTime?
 
   // Identificador da sessão no serviço externo responsável por manter o socket com o WhatsApp
+  // Só usado quando provider = EVOLUTION.
   externalSessionId String?
+
+  // Campos usados quando provider = CLOUD_API (API oficial da Meta) — ver
+  // whatsapp-cloud-api.ts. cloudApiAccessTokenEncrypted usa o mesmo esquema
+  // de criptografia (AES-256-GCM) já usado pra `Config.openaiApiKeyEncrypted`
+  // (ver src/lib/encryption.ts) — nunca gravado em texto puro.
+  cloudApiPhoneNumberId        String?
+  cloudApiWabaId                String?
+  cloudApiAccessTokenEncrypted String? @db.Text
 
   lastConnectedAt    DateTime?
   lastDisconnectedAt DateTime?
