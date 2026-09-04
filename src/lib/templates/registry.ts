@@ -18,6 +18,7 @@ import type { Node, Edge } from "@xyflow/react";
 import { createBeautySalonTemplate, BEAUTY_SALON_TEMPLATE_NAME } from "./beauty-salon-template";
 import { createDigitalAnalyticsTemplate, DIGITAL_ANALYTICS_TEMPLATE_NAME } from "./digital-analytics-template";
 import { createKfgTemplate, KFG_TEMPLATE_NAME } from "./kfg-template";
+import { createKlanTattooTemplate, KLAN_TATTOO_TEMPLATE_NAME } from "./klan-tattoo-template";
 
 /**
  * Uma coluna do Kanban de `/pipeline`. `key` usa os mesmos 4 estágios
@@ -54,6 +55,13 @@ const BEAUTY_SALON_PIPELINE_COLUMNS: PipelineColumnDefinition[] = [
   { key: "AGENDAMENTO_CONCLUIDO", label: "Agendamento Concluído", description: "Atendimento fechado" },
 ];
 
+const KLAN_TATTOO_PIPELINE_COLUMNS: PipelineColumnDefinition[] = [
+  { key: "PRIMEIRO_ATENDIMENTO", label: "Primeiro Atendimento", description: "IA conduzindo o atendimento inicial" },
+  { key: "CLIENTE_RECORRENTE", label: "Cliente Recorrente", description: "Já é cliente, voltou pra um novo atendimento" },
+  { key: "AGUARDANDO_HUMANO", label: "Aguardando Humano", description: "IA encaminhou, esperando um artista/atendente" },
+  { key: "AGENDAMENTO_CONCLUIDO", label: "Agendamento Concluído", description: "Atendimento fechado" },
+];
+
 const KFG_PIPELINE_COLUMNS: PipelineColumnDefinition[] = [
   { key: "PRIMEIRO_ATENDIMENTO", label: "Primeiro Atendimento", description: "IA qualificando o lead vindo do anúncio" },
   { key: "CLIENTE_RECORRENTE", label: "Cliente Recorrente", description: "Já conversou antes, voltou pra um novo atendimento" },
@@ -84,6 +92,14 @@ export const TEMPLATE_REGISTRY: TemplateDefinition[] = [
       "Leads de anúncio de tráfego pago (detecção do veículo por palavra-chave na primeira mensagem) até a qualificação completa: nome, veículo de interesse, forma de negociação (à vista, troca, financiamento) e, no financiamento, restrição bancária + CNH/CPF/nascimento — encaminhado por WhatsApp pro time comercial.",
     load: createKfgTemplate,
     pipelineColumns: KFG_PIPELINE_COLUMNS,
+  },
+  {
+    key: "klan-tattoo",
+    name: KLAN_TATTOO_TEMPLATE_NAME,
+    description:
+      "Nome + menu (Tatuagem / Piercing / Outros). Tatuagem: coleta referência com IA de visão real (estilo, complexidade, tamanho, região) e calcula uma estimativa de preço via webhook. Piercing: qualifica tipo/joia. Outros: coleta livre. Todos convergem numa notificação pro WhatsApp interno da Klan.",
+    load: createKlanTattooTemplate,
+    pipelineColumns: KLAN_TATTOO_PIPELINE_COLUMNS,
   },
 ];
 
