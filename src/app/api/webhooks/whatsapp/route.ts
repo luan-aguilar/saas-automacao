@@ -188,7 +188,17 @@ async function resolveOutboundFromMeMessage(params: {
   const targetChat =
     chat ??
     (await prisma.chat.create({
-      data: { userId, contactPhone, contactName: contactPhone, lastMessagePreview: text.slice(0, 120), aiEnabled: false },
+      data: {
+        userId,
+        contactPhone,
+        contactName: contactPhone,
+        lastMessagePreview: text.slice(0, 120),
+        aiEnabled: false,
+        // Marca com o número do tenant conectado agora — ver doc do campo
+        // em schema.prisma (isolamento entre pareamentos diferentes).
+        connectedPhoneNumber: (await prisma.whatsappConnection.findUnique({ where: { userId }, select: { phoneNumber: true } }))
+          ?.phoneNumber,
+      },
     }));
 
   await prisma.message.create({

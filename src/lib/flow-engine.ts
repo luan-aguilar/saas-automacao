@@ -210,6 +210,20 @@ const AI_JSON_CONTRACT = `Responda SEMPRE em um único objeto JSON válido, sem 
 type AiJsonResponse = { reply?: string; done?: boolean; needsHuman?: boolean; variables?: Record<string, string> };
 
 /**
+ * Extrai a URL de mídia (`/api/media/{id}`) da mensagem MAIS RECENTE do
+ * contato, se houver — é o formato que `resolveIncomingMessageText` (ver
+ * `src/app/api/webhooks/whatsapp/route.ts`) grava quando o contato manda uma
+ * foto. Usado para anexar a imagem de verdade à chamada da OpenAI (ver
+ * `executeAiResponseNode`) em vez de só descrever em texto que "uma foto foi
+ * enviada" — sem isso, a IA nunca via os pixels, só o texto ao redor do link.
+ */
+function extractLatestImageUrl(incomingText: string | undefined): string | null {
+  if (!incomingText) return null;
+  const match = incomingText.match(/https?:\/\/\S+\/api\/media\/[a-zA-Z0-9_-]+/);
+  return match ? match[0] : null;
+}
+
+/**
  * Executa o bloco "Resposta IA": chama a OpenAI com o prompt configurado
  * (global ou específico do bloco) + um pequeno histórico da conversa mantido
  * em `variables._ai_history`, envia a resposta ao contato e extrai variáveis
@@ -421,6 +435,21 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
 
   const client = new OpenAI({ apiKey });
 
+  // Se a mensagem mais recente do contato trouxe uma foto (ver
+  // `resolveIncomingMessageText`) E este node tiver `analyzeAttachedImages`
+  // ligado, anexa a imagem de verdade à chamada — sem isso, a IA só via o
+  // texto "[Foto enviada pelo cliente: URL]" e tinha que fingir que sabia o
+  // que a imagem mostrava. Fica desligado por padrão pra não alterar em
+  // nada o comportamento de nodes já em produção (ex: coleta de foto do
+  // salão de beleza) — ver doc do flag em `types.ts`.
+  const latestImageUrl = data.analyzeAttachedImages ? extractLatestImageUrl(context.incomingText) : null;
+  const userMessageContent: OpenAI.Chat.ChatCompletionContentPart[] | string = latestImageUrl
+    ? [
+        { type: "text", text: userContent },
+        { type: "image_url", image_url: { url: latestImageUrl } },
+      ]
+    : userContent;
+
   let raw: string;
   try {
     const completion = await client.chat.completions.create({
@@ -429,7 +458,7 @@ async function executeAiResponseNode(data: AiResponseData, context: FlowContext)
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: userContent },
+        { role: "user", content: userMessageContent },
       ],
     });
     raw = completion.choices[0]?.message?.content ?? "{}";
@@ -757,6 +786,10 @@ async function logInboundMessageAndGetChat(
           lastMessagePreview: content.slice(0, 120),
           unreadCount: 1,
           aiEnabled: defaultAiEnabledForNewChat,
+          // Marca com o número do tenant conectado agora — ver doc do campo
+          // em schema.prisma (isolamento entre pareamentos diferentes).
+          connectedPhoneNumber: (await prisma.whatsappConnection.findUnique({ where: { userId }, select: { phoneNumber: true } }))
+            ?.phoneNumber,
         },
       });
 

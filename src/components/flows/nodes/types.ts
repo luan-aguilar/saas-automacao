@@ -143,6 +143,22 @@ export type AiResponseData = {
    * pergunta numerada do app (ex: "1 - Sim" / "2 - Não").
    */
   resolveAffirmative?: { affirmativeDigit?: string; negativeDigit?: string };
+  /**
+   * Se true, quando a mensagem MAIS RECENTE do contato contiver uma foto
+   * (ver `resolveIncomingMessageText` no webhook — grava um link
+   * `/api/media/{id}` no texto), o motor anexa a imagem de verdade à
+   * chamada da OpenAI como entrada visual (`image_url`), além do texto de
+   * sempre — ver `extractLatestImageUrl`/`executeAiResponseNode` em
+   * `flow-engine.ts`. Deixe `false`/ausente (padrão) em qualquer node cujo
+   * prompt já foi escrito e testado assumindo que a IA só recebe o LINK da
+   * foto em texto (ex: o node de coleta de foto do salão de beleza) — ligar
+   * isso muda o que o modelo efetivamente "vê" e pode mudar sutilmente como
+   * ele responde, então só ligue em nodes novos, feitos já contando com
+   * visão real (ex: avaliação de referência de tatuagem). `config.model` do
+   * tenant precisa suportar entrada multimodal (gpt-4o e gpt-4o-mini
+   * suportam).
+   */
+  analyzeAttachedImages?: boolean;
 };
 
 /** Tipo de mensagem interativa: botões simples (até 3) ou lista (até 10 itens). */

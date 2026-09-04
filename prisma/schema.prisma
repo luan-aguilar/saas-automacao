@@ -327,6 +327,15 @@ model Chat {
   contactPhone String
   contactAvatarUrl String?
 
+  // Número de WhatsApp do TENANT (não do contato) que estava conectado
+  // quando esta conversa nasceu — ver WhatsappConnection.phoneNumber.
+  // Existe pra isolar conversas entre pareamentos diferentes: se o tenant
+  // desconectar e outra pessoa parear um número pessoal diferente na mesma
+  // conta, as conversas do número anterior não devem aparecer pra quem
+  // conectou o número novo (GET /api/chats filtra por isso). Nulo em
+  // conversas criadas antes deste campo existir (ver migração de backfill).
+  connectedPhoneNumber String?
+
   status ChatStatus @default(OPEN)
 
   // Toggle por conversa: quando false, a IA para de responder e um humano assume
