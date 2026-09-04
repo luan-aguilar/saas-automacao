@@ -37,11 +37,15 @@
  *   -> Cadeia de condições (nome OU número) desvia pra 3 sub-fluxos:
  *      1) TATUAGEM: pede foto de referência -> IA com visão real
  *         (`analyzeAttachedImages: true`) coleta estilo, complexidade
- *         (1-5), tamanho (cm) e região do corpo, tolerando qualquer ordem
- *         -> bloco de Webhook chama `/api/webhooks/tattoo-price` (nesta
- *         mesma aplicação — ver PLACEHOLDER de fórmula lá) -> apresenta a
- *         faixa de preço estimada, deixando claro que é aproximado ->
- *         encaminha pra um artista confirmar.
+ *         (1-5), tamanho (cm), região do corpo e se é só preto/só contorno
+ *         (pra detectar Flash Tattoo), tolerando qualquer ordem -> bloco de
+ *         Webhook chama `/api/webhooks/tattoo-price` (nesta mesma
+ *         aplicação — regras e valores confirmados com a Klan em
+ *         2026-09-04: Flash Tattoo até 6cm/só preto/só contorno tem preço
+ *         FIXO R$92 promo ou R$120 cheio; fora disso, faixa estimada por
+ *         tamanho+complexidade+região) -> apresenta o valor, deixando claro
+ *         que fora do Flash é aproximado -> encaminha pra um artista
+ *         confirmar.
  *      2) PIERCING: pergunta qual piercing + joia desejada (IA dedicada,
  *         texto livre — sem catálogo fixo, a Klan decide as opções reais
  *         depois) -> encaminha direto pra equipe confirmar valor/agenda.
@@ -52,11 +56,14 @@
  *      se aplicam a um caminho específico ficam "Não se aplica" (mesmo
  *      princípio já usado no template da KFG).
  *
- * PLACEHOLDERS que precisam ser preenchidos pela Klan antes de ativar:
+ * PLACEHOLDERS que ainda precisam ser preenchidos pela Klan antes de ativar:
  *   - Número(s) de WhatsApp que recebem a notificação de lead
  *     (`klan-lead-alert.recipientPhones`, hoje `[""]`).
- *   - Fórmula de preço de tatuagem em `src/app/api/webhooks/tattoo-price/route.ts`
- *     (valores atuais são só um ponto de partida razoável, não a tabela real).
+ *
+ * A fórmula de preço de tatuagem em `src/app/api/webhooks/tattoo-price/route.ts`
+ * já usa valores/regras reais confirmados com a Klan (2026-09-04): preço fixo
+ * de Flash Tattoo (R$92 promo / R$120 cheio) e tabela de 5 níveis de região
+ * por dificuldade/dor. Ajustar ali direto se a Klan mudar algum valor.
  */
 
 import type { Node, Edge } from "@xyflow/react";
@@ -147,7 +154,7 @@ Se ainda não tiver uma imagem, pode descrever com detalhes que eu me viro. 😉
  */
 const AI_TATUAGEM_PROMPT = `Você é a assistente virtual da Klan Tattoo. A cliente já disse que quer uma TATUAGEM e acabou de receber um pedido pra mandar uma foto de referência (ou descrever, se não tiver imagem).
 
-Sua função aqui é coletar 4 informações, em qualquer ordem, tolerando tudo junto ou aos poucos:
+Sua função aqui é coletar 6 informações, em qualquer ordem, tolerando tudo junto ou aos poucos:
 
 1. \`estilo_tatuagem\` — o estilo (ex: fineline, realismo, old school, tribal, aquarela, blackwork, oriental) + uma breve descrição do que a referência mostra.
 2. \`complexidade_estimada\` — um número de "1" a "5" avaliando a complexidade do DESENHO (não do preço):
@@ -159,16 +166,18 @@ Sua função aqui é coletar 4 informações, em qualquer ordem, tolerando tudo 
    SE uma imagem foi anexada a esta mensagem, avalie observando a imagem DE VERDADE — estilo, quantidade de linhas, sombreamento, cores. SE não houver imagem (só descrição em texto), estime pela descrição da forma mais razoável possível — nunca deixe de preencher esse campo só por falta de foto.
 3. \`tamanho_cm\` — tamanho aproximado em CENTÍMETROS (maior dimensão). Se a cliente não souber precisar, ajude comparando com algo conhecido (ex: "tamanho de uma moeda de 1 real", "da palma da mão") e converta você mesma pra uma estimativa em cm (só o número, ex: "8").
 4. \`regiao_corpo\` — em que parte do corpo ela quer fazer.
+5. \`apenas_preto\` — "sim" se a tatuagem é só na cor preta (sem nenhuma cor), "não" se tiver qualquer cor. SE houver imagem anexada, julgue pela imagem de verdade.
+6. \`apenas_contorno\` — "sim" se for só o contorno/traço (sem sombreamento nem preenchimento sólido), "não" se tiver sombra ou preenchimento. SE houver imagem anexada, julgue pela imagem de verdade.
 
 Regras:
 - CRÍTICO — em TODO turno, mesmo com "done": false, "variables" TEM que incluir todo campo que você já tiver certeza — nunca segure um campo já confirmado pro turno final.
 - Confira primeiro o bloco "DADOS JÁ CONFIRMADOS" antes de perguntar de novo qualquer campo que já esteja lá.
-- Peça só o que ainda estiver faltando — pode ser numa única pergunta cobrindo vários campos de uma vez.
-- Assim que tiver os 4 campos, marque "done": true IMEDIATAMENTE, e inclua TAMBÉM \`resumo_ia\` (1 frase, ex: "Cliente quer tatuagem estilo fineline, 8cm, no antebraço.") — os 5 campos são obrigatórios nesse turno, nenhum opcional. "reply" não é enviado ao cliente nesse caso (o sistema mostra a estimativa de preço em seguida), mas preencha algo breve mesmo assim.
+- Peça só o que ainda estiver faltando — pode ser numa única pergunta cobrindo vários campos de uma vez. NÃO precisa perguntar "é só preto?"/"é só contorno?" como pergunta separada pra cliente — na maioria dos casos dá pra julgar isso pela própria referência (imagem ou descrição) sem incomodar com mais perguntas; só pergunte explicitamente se ficar realmente ambíguo.
+- Assim que tiver os 6 campos, marque "done": true IMEDIATAMENTE, e inclua TAMBÉM \`resumo_ia\` (1 frase, ex: "Cliente quer tatuagem estilo fineline, 8cm, no antebraço.") — os 7 campos são obrigatórios nesse turno, nenhum opcional. "reply" não é enviado ao cliente nesse caso (o sistema mostra o valor em seguida), mas preencha algo breve mesmo assim.
 - Se a cliente perguntar/comentar algo sem relação com a tatuagem: não responda o conteúdo, diga com gentileza que você só fala sobre assuntos da Klan Tattoo, e repita o que falta. NUNCA marque "needsHuman": true só por isso.
 - Seja calorosa, use poucos emojis, mensagens curtas.`;
 
-const APRESENTA_PRECO_MESSAGE = `Com base no que você me contou (estilo *{{estilo_tatuagem}}*, {{tamanho_cm}}cm, região {{regiao_corpo}}), a estimativa fica em torno de *{{preco_estimado}}*. 💰
+const APRESENTA_PRECO_MESSAGE = `Com base no que você me contou (estilo *{{estilo_tatuagem}}*, {{tamanho_cm}}cm, região {{regiao_corpo}}), o valor fica em *{{preco_estimado}}*. 💰
 
 Importante: esse é só um valor aproximado — o preço final é sempre confirmado por um dos nossos tatuadores, presencialmente ou pelo decalque. Já vou te conectar com a equipe pra tirar dúvidas e, se quiser, agendar sua avaliação! 😊`;
 
