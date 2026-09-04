@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ChangePasswordForm } from "@/components/profile/change-password-form";
+import { LogoutAllSessionsButton } from "@/components/profile/logout-all-sessions-button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -48,6 +49,8 @@ export default async function ProfilePage() {
         </Card>
 
         <ChangePasswordForm mustChangePassword={user?.mustChangePassword ?? false} />
+
+        {user?.role === "MASTER" && <LogoutAllSessionsButton />}
       </div>
     </div>
   );

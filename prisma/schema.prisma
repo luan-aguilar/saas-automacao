@@ -99,6 +99,14 @@ model User {
   // Indica se o usuário ainda está usando a senha temporária gerada pelo MASTER
   mustChangePassword Boolean @default(true)
 
+  // Incrementado pelo botão "Deslogar de todas as sessões" (só exposto pra
+  // role MASTER hoje — ver `POST /api/profile/logout-all-sessions`). O JWT
+  // de sessão carrega o valor vigente no momento do login; se não bater mais
+  // com o valor atual do banco, a sessão é tratada como revogada (ver
+  // callback `jwt` em `src/auth.ts`, só roda a checagem contra o banco para
+  // MASTER). Isso invalida SÓ as sessões do próprio usuário, nunca de outro.
+  sessionVersion Int @default(0)
+
   // Quem (MASTER, ou o dono do tenant no caso de um FUNCIONARIO) criou esta conta
   createdById String?
   createdBy   User?   @relation("UserCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
