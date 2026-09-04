@@ -1,91 +1,73 @@
-# RoboZap SaaS — Handoff de contexto (Cowork → Claude Code / VS Code)
+# saas-automacao — Handoff de contexto
 
-Este documento resume tudo o que foi construído até agora numa sessão do Cowork (que rodava num sandbox na nuvem, sem acesso a `npm`/build). Os arquivos já estão sincronizados neste repositório — o objetivo deste handoff é só transferir o **contexto e as decisões**, já que o histórico de conversa em si não migra entre as duas ferramentas.
+Este documento existe pra qualquer sessão nova do Claude Code (rodando de outro computador, sem a conversa anterior) se situar rápido. Mantenha-o atualizado sempre que algo relevante mudar — é o que substitui a "memória" entre máquinas diferentes.
 
-## Visão geral do projeto
+## Quem é o dono deste projeto
 
-**RoboZap SaaS** é uma plataforma multi-tenant para agências/donos de negócio venderem robôs de atendimento de WhatsApp com IA (OpenAI) para os próprios clientes finais. Cada cliente (`CLIENTE`) tem sua própria conexão de WhatsApp, configuração de IA e fluxos de automação; um usuário `MASTER` administra os tenants.
+Luan constrói este SaaS sozinho hoje. Havia uma sociedade de 3 (Luan + Lucas, comercial/vendas + Raphael, tráfego pago) que se desfez em setembro/2026 — Lucas fechou um contrato de R$4.000 sem consultar Luan e ofereceu uma divisão injusta (R$1.500 dele vs. R$1.000+R$1.000+R$500 pros outros três, sem mensalidade), ameaçando trocar de dev quando Luan questionou. Luan saiu da sociedade. Toda a infraestrutura (repositório, Vercel, banco, WhatsApp, chaves de API) está nas contas PESSOAIS do Luan — ele não precisa de permissão de ninguém pra continuar.
+
+Luan também mantém um segundo projeto solo, **capturarleads** (`D:\projetos\capturarleads`) — gera landing pages automáticas pra prospectar clientes sem site. Os dois produtos miram o mesmo tipo de cliente (pequenos negócios locais) e podem ser vendidos juntos.
+
+## Visão geral do produto
+
+Plataforma multi-tenant de automação de atendimento no WhatsApp com IA (OpenAI), vendida por Luan pra donos de negócio. Cada tenant (`role: CLIENTE`) tem sua própria conexão de WhatsApp, configuração de IA e Construtor de Fluxos visual (estilo n8n, drag-and-drop). Um `MASTER` (o próprio Luan) administra os tenants.
 
 ## Stack técnica
 
-- Next.js 14 (App Router) + TypeScript
-- Prisma ORM + PostgreSQL (Supabase)
-- NextAuth v5 (beta) — Credentials provider, sessão JWT, RBAC (`MASTER` / `CLIENTE`)
-- `@xyflow/react` (React Flow v12) — Construtor de Fluxos visual, estilo n8n
-- **Evolution API v2** (self-hosted, `http://144.126.133.92:8080`) como gateway do WhatsApp (Baileys por trás)
-- bcryptjs para hash de senha (não bcrypt nativo — compatibilidade com runtime serverless da Vercel)
-- Deploy: Vercel
+- Next.js 14 (App Router) + TypeScript, deploy na Vercel (git-linked, push na `master` publica sozinho)
+- Prisma ORM + PostgreSQL (Supabase) — **sem pasta de migrações tracked, usa `npx prisma db push`** (não `migrate dev`)
+- NextAuth v5 (beta) — Credentials, sessão JWT, RBAC (`MASTER` / `CLIENTE` / `FUNCIONARIO`)
+- `@xyflow/react` (React Flow v12) — Construtor de Fluxos visual
+- **Evolution API v2** (self-hosted, Baileys por trás) como gateway do WhatsApp — API NÃO OFICIAL. Ver seção de riscos abaixo.
+- OpenAI (chave própria por tenant, criptografada em `Config.openaiApiKeyEncrypted`)
+- bcryptjs (não bcrypt nativo — roda em serverless da Vercel sem binário nativo)
 
-## Modelo de dados (`prisma/schema.prisma`)
+## Estado atual: TUDO FUNCIONANDO EM PRODUÇÃO
 
-- `User` — RBAC (`role`: MASTER/CLIENTE), status, `mustChangePassword`
-- `Config` — system prompt geral da IA, chave OpenAI criptografada (AES-256-GCM), modelo, temperatura
-- `WhatsappConnection` — status da conexão, `qrCode`, `externalSessionId` (nome da instância na Evolution API)
-- `Flow` — `nodes`/`edges` do React Flow serializados como JSON, `isActive`
-- `Chat` / `Message` — schema pronto para a Central de Atendimento (Live Chat), mas verificar o quanto da UI/endpoints já está implementado
-- `AuditLog` — auditoria de ações do MASTER
+Ao contrário de handoffs antigos deste arquivo, o motor de fluxos está **completo e rodando de verdade** com clientes reais pagando (ver "Tenants ativos" abaixo). Cobertura:
 
-## O que já está implementado e funcionando
+- Webhook `POST /api/webhooks/whatsapp` recebe mensagens reais da Evolution API e dispara o motor.
+- `src/lib/flow-engine.ts` executa todos os tipos de bloco: `trigger`, `aiResponse` (chama a OpenAI de verdade, contrato JSON forçado — ver `AI_JSON_CONTRACT`), `staticMessage` (texto/botões/lista), `condition`, `keywordCatalog`, `alertNotification`, `webhook` (POST externo, resposta JSON vira variáveis do fluxo), `googleCalendarSlots`/`googleCalendarBook`.
+- `FlowSession` persiste em qual node cada contato está parado + as variáveis já coletadas, por tenant+contato.
+- Fotos recebidas do cliente são baixadas/salvas (`MediaAsset`) e servidas publicamente em `/api/media/[id]` — mas a IA só "enxerga" a imagem de verdade se o node tiver `analyzeAttachedImages: true` (flag novo, opt-in — ver seção abaixo).
+- Central de Atendimento (`/chat`), Kanban (`/pipeline`), gestão de clientes MASTER (`/clients`), Construtor de Fluxos (`/flows`) — tudo implementado e em uso.
 
-1. **Autenticação e RBAC** — login com e-mail/senha normalizados (`.toLowerCase().trim()` em todos os pontos de leitura/escrita, para evitar falso negativo de login), sessão JWT, MASTER pode criar clientes com senha temporária.
-2. **Conexão real com WhatsApp via Evolution API v2** (`src/lib/evolution-api.ts`, `src/app/api/whatsapp/*`):
-   - Gerar QR Code: `POST /instance/create` com fallback em `GET /instance/connect/{instanceName}`.
-   - Polling de status a cada 3s: `GET /instance/connectionState/{instanceName}`.
-   - **Desconectar de verdade**: chama `logout` (fecha o socket) **e depois `delete`** (apaga a instância e destrói as credenciais em cache) — sem o `delete`, o Baileys reconectava sozinho poucos segundos depois usando o auth state salvo.
-3. **Construtor de Fluxos visual** (`src/components/flows/*`) — drag-and-drop de blocos, undo/redo (Ctrl+Z/Shift+Z), atalhos de teclado, deleção de conexões (edges), 5 tipos de bloco:
-   - `trigger`, `aiResponse`, `staticMessage` (agora com dois modos: **botões** até 3, ou **lista** até 10 itens com `id`/`title`/`description`), `condition`, `alertNotification`.
-   - Template pronto **"Salão de Beleza / Estética"** (`src/lib/templates/beauty-salon-template.ts`), carregável com 1 clique no botão "Carregar Template: Salão de Beleza" no topo do Construtor.
-4. **Envio de mensagem avulso** (`src/lib/whatsapp-service.ts` → `sendWhatsappMessage`) funciona quando chamado diretamente (ex: pelo bloco de Notificação/Alerta).
+## Tenants ativos (clientes reais)
 
-## ⚠️ O que NÃO está implementado (o gap mais importante)
+| Tenant | Segmento | Template | Situação |
+|---|---|---|---|
+| Home Concept (Igor) | Salão de beleza | `beauty-salon-template.ts` | Rodando, começou como favor/case, virou fonte de indicações |
+| KFG | Revenda de veículos | `kfg-template.ts` | Pago (R$2.000 implantação + R$199/mês, valor antigo — rever agora que Luan está sozinho) |
+| Klan Tattoo | Tatuagem + piercing (São Caetano do Sul, também organiza a Tattoo Week) | `klan-tattoo-template.ts` | **Construído em 2026-09-04, AINDA NÃO ATIVADO** — falta: cadastrar como cliente em `/clients`, parear WhatsApp, ajustar fórmula de preço (`src/app/api/webhooks/tattoo-price/route.ts` — valores são PLACEHOLDER), preencher número de notificação (`recipientPhones` vazio no template) |
 
-Isto é o ponto crítico que você perguntou: **a automação ainda não roda de verdade em produção**, apesar do Construtor de Fluxos já salvar/carregar fluxos normalmente. Especificamente:
+## ⚠️ Risco conhecido — Evolution API é NÃO OFICIAL
 
-- **Não existe webhook recebendo mensagens do WhatsApp.** A Evolution API não está configurada para avisar a aplicação quando um contato manda mensagem (não há `POST /api/whatsapp/webhook` implementado e plugado). Sem isso, nenhum fluxo é disparado automaticamente quando alguém escreve pro robô.
-- **`src/lib/flow-engine.ts` é essencialmente boilerplate.** Só o bloco `alertNotification` tem execução real implementada (`executeAlertNotificationNode` — interpola variáveis e envia via `sendWhatsappMessage`) — **e mesmo esse nunca é chamado em produção hoje**, porque nada dispara `executeFlowNode` (não há webhook nem cron acionando o motor).
-  - **Bloco "Resposta IA" (`aiResponse`)**: TODO — não chama a OpenAI ainda. Só loga um aviso e retorna `ok: true`.
-  - **Bloco "Mensagem Estática" (`staticMessage`)**: TODO — não envia a mensagem (nem os botões/lista) pelo WhatsApp ainda.
-  - **Bloco "Condição" (`condition`)**: TODO — não avalia a condição nem escolhe qual aresta (`yes`/`no`) seguir.
-- **Não existe "sessão de fluxo" persistida por conversa** — ou seja, nada guarda em qual node cada contato está parado, nem as variáveis já coletadas (ex: `{{nome}}`, `{{foto_atual_url}}`) entre uma mensagem e outra. Isso precisa ser modelado (provavelmente uma tabela nova, ou reaproveitando `Chat`).
+Confirmado: WhatsApp roda via Baileys/Evolution API (não é a Business API oficial da Meta). Isso é seguro pro uso atual (fluxos disparados por CLIENTE mandando mensagem primeiro — inbound), mas **disparo em massa/frio pra contatos sem histórico de conversa é receita pra banimento de número**. Se algum dia pedirem pra automatizar disparo em massa (ex: follow-up de leads frios em lote), NÃO construa sem alertar explicitamente sobre esse risco — já houve um caso real (Lucas tentou fechar isso com um cliente sem consultar Luan).
 
-**Resumindo a resposta direta à pergunta:** sim — hoje o Construtor de Fluxos é só a camada de **desenho e persistência** do fluxo. A "IA", as "mensagens estáticas" e as "condições" ainda não fazem nada quando alguém manda mensagem de verdade pro WhatsApp, porque falta (a) o webhook de entrada e (b) a implementação de cada executor em `flow-engine.ts`.
+## Convenções e decisões importantes (não quebrar sem necessidade)
 
-## Próximos passos sugeridos (em ordem de dependência)
-
-1. Criar `POST /api/whatsapp/webhook` e configurar a Evolution API para chamá-lo no evento de mensagem recebida (`MESSAGES_UPSERT` ou equivalente no v2).
-2. Modelar e persistir o "estado da conversa" por contato/tenant (node atual + variáveis coletadas até então).
-3. Implementar de verdade os executores em `flow-engine.ts`:
-   - `aiResponse`: chamar a OpenAI usando `Config.systemPrompt` (ou `customPrompt` do bloco) + histórico da conversa.
-   - `staticMessage`: enviar texto + botões/lista via Evolution API (`/message/sendButtons` ou `/message/sendList`, dependendo do `interactiveType`).
-   - `condition`: avaliar `operator`/`value` contra a variável indicada e escolher a aresta `yes`/`no`.
-4. Ligar tudo no motor: dado o `Flow` ativo do tenant + uma mensagem recebida, andar pelo grafo `nodes`/`edges` a partir do node atual da sessão.
-5. Persistir as mensagens trocadas em `Chat`/`Message` para alimentar a Central de Atendimento (Live Chat).
+- **Cada template de cliente é um arquivo próprio e independente** (`beauty-salon-template.ts`, `kfg-template.ts`, `klan-tattoo-template.ts`) — nenhum importa lógica de negócio dos outros (só helpers genéricos de `flow-helpers.ts`: `conditionNode`, `plainTextNode`, `edge`). Ao criar um 4º template, siga o mesmo padrão: arquivo próprio, registrar em `src/lib/templates/registry.ts`.
+- **`Chat.connectedPhoneNumber`** (adicionado 2026-09-04): grava qual número de WhatsApp do tenant estava conectado quando a conversa nasceu. `GET /api/chats` filtra por isso — resolve um bug real onde reconectar com um número DIFERENTE (ex: outra pessoa pareando o próprio número pessoal na mesma conta MASTER) deixava o histórico do número antigo visível. Sempre que criar um `Chat` novo em código, stampar esse campo (ver `logInboundMessageAndGetChat` em `flow-engine.ts` e o handler `fromMe` em `route.ts` do webhook).
+- **`AiResponseData.analyzeAttachedImages`** (adicionado 2026-09-04): opt-in, `false`/ausente por padrão. Quando `true`, o node anexa a foto mais recente do contato como entrada visual DE VERDADE na chamada da OpenAI (`image_url`), não só o texto do link. **Nunca ligue isso num node de um template já em produção sem confirmar com o Luan antes** — muda o que o modelo efetivamente processa.
+- E-mails sempre normalizados com `.toLowerCase().trim()` antes de comparar/gravar.
+- `instanceNameFor(userId)` é determinístico — recalculável a qualquer momento.
+- Sincronização de histórico ao conectar (tipo WhatsApp Web) **não existe ainda** — o webhook só processa mensagens novas a partir do momento da conexão. Feature real, ainda não construída.
+- Sempre rodar `npx tsc --noEmit` e `npm run build` antes de dar push — schema muda com `prisma db push` (sem histórico de migração), não `migrate dev`.
 
 ## Arquivos-chave
 
 | Arquivo | O que é |
 |---|---|
-| `src/lib/evolution-api.ts` | Cliente HTTP da Evolution API v2 (criar instância, QR, status, enviar texto, logout, delete) |
-| `src/lib/whatsapp-service.ts` | Camada de envio usada pelo motor de fluxo (chama `evolution-api.ts`) |
-| `src/lib/flow-engine.ts` | Motor de execução dos fluxos — **maior parte ainda é TODO**, ver seção acima |
-| `src/app/api/whatsapp/connect/route.ts` | Gera QR Code / conecta instância |
-| `src/app/api/whatsapp/status/route.ts` | Polling de status (usado pelo front a cada 3s) |
-| `src/app/api/whatsapp/disconnect/route.ts` | Desconecta de verdade (logout + delete da instância) |
-| `src/components/flows/flow-builder.tsx` | Canvas do Construtor de Fluxos (React Flow), undo/redo, salvar, carregar template |
-| `src/components/flows/node-config-drawer.tsx` | Painel lateral de configuração de cada tipo de bloco |
-| `src/components/flows/nodes/types.ts` | Tipos de dados de cada bloco (`TriggerData`, `AiResponseData`, `StaticMessageData`, etc.) |
-| `src/lib/templates/beauty-salon-template.ts` | Template pronto do fluxo "Salão de Beleza" (nodes + edges + system prompt da IA) |
-| `src/auth.ts` / `src/auth.config.ts` | NextAuth v5 — login, RBAC, callbacks JWT/session |
+| `src/lib/flow-engine.ts` | Motor de execução dos fluxos — completo, todos os tipos de bloco implementados |
+| `src/lib/evolution-api.ts` | Cliente HTTP da Evolution API v2 |
+| `src/lib/whatsapp-service.ts` | Camada de envio (chama `evolution-api.ts`) |
+| `src/app/api/webhooks/whatsapp/route.ts` | Recebe eventos da Evolution API (mensagens, status de conexão) |
+| `src/app/api/webhooks/tattoo-price/route.ts` | Calcula estimativa de preço de tatuagem pro fluxo da Klan (fórmula PLACEHOLDER) |
+| `src/components/flows/nodes/types.ts` | Tipos de dados de cada bloco do Construtor de Fluxos |
+| `src/lib/templates/*.ts` | Um arquivo por cliente/segmento — ver tabela de tenants acima |
+| `src/lib/templates/registry.ts` | Catálogo dos templates — registrar aqui ao criar um novo |
 | `prisma/schema.prisma` | Modelo de dados completo |
 
-## Convenções e decisões importantes (não quebrar sem necessidade)
+## Se você é uma sessão nova começando aqui
 
-- `instanceNameFor(userId)` é determinístico — sempre gera o mesmo nome de instância na Evolution API para um dado tenant, então pode ser recalculado a qualquer momento (não precisa ser guardado com medo de "perder" o valor).
-- E-mails sempre normalizados com `.toLowerCase().trim()` antes de comparar ou gravar no banco (login, seed, criação de cliente) — Postgres compara string exata.
-- NextAuth v5 beta tem um bug de tipos no callback `session`: `token.id`/`token.role`/`token.mustChangePassword` chegam como `unknown` mesmo com a extensão de tipos declarada — por isso há casts explícitos (`as string`, `as Role`, `as boolean`) em `src/auth.config.ts`. Não remover sem testar o build.
-- Limite de 3 botões / 10 itens de lista por mensagem (limite da própria API do WhatsApp) — validado no front (`flow-builder.tsx`) antes de permitir salvar o fluxo.
-- O ambiente onde este handoff foi gerado não tinha acesso ao registro do npm (sandbox restrito), então nenhum `npm run build`/`npm install` foi rodado lá — toda validação de sintaxe foi feita com `tsc --noEmit` isolado. Vale rodar um build completo por aqui antes de ir pra produção com qualquer mudança nova.
-
-## O que peço para você fazer agora
-
-Leia os arquivos-chave listados acima (principalmente `flow-engine.ts`, `evolution-api.ts` e o schema do Prisma) para se situar na estrutura real do projeto. **Não modifique nada ainda** — só quero confirmar que você entendeu o estado atual antes de começarmos a implementar o motor de execução dos fluxos (os próximos passos sugeridos acima).
+Leia este arquivo inteiro antes de mexer em qualquer coisa. Se o Luan pedir pra continuar algo específico, pergunte o que ele quer fazer — não presuma que é continuar exatamente de onde uma conversa anterior parou, ele pode ter mudado de prioridade.
