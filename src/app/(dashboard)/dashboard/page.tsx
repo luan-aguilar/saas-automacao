@@ -10,10 +10,22 @@ export default async function DashboardPage() {
   const userId = getTenantId(session!.user);
   const role = session!.user.role;
 
+  // Mesmo filtro de `GET /api/chats` (ver doc de `Chat.connectedPhoneNumber`
+  // em schema.prisma) — sem isso, os contadores de conversas somavam também
+  // o histórico de um número antigo reconectado por outra pessoa (ex: o
+  // ex-sócio que usou o próprio WhatsApp pessoal nesta conta antes).
+  const connection = await prisma.whatsappConnection.findUnique({
+    where: { userId },
+    select: { phoneNumber: true },
+  });
+  const chatFilter = connection?.phoneNumber
+    ? { userId, connectedPhoneNumber: connection.phoneNumber }
+    : { userId, id: { in: [] } }; // sem número conectado, nenhum chat é legítimo
+
   const [flowsCount, chatsCount, openChatsCount, clientsCount] = await Promise.all([
     prisma.flow.count({ where: { userId } }),
-    prisma.chat.count({ where: { userId } }),
-    prisma.chat.count({ where: { userId, status: "OPEN" } }),
+    prisma.chat.count({ where: chatFilter }),
+    prisma.chat.count({ where: { ...chatFilter, status: "OPEN" } }),
     role === "MASTER" ? prisma.user.count({ where: { role: "CLIENTE" } }) : Promise.resolve(0),
   ]);
 

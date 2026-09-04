@@ -31,20 +31,32 @@ export default async function PipelinePage() {
     );
   }
 
-  const chats = await prisma.chat.findMany({
+  // Mesmo filtro de `GET /api/chats` (ver doc de `Chat.connectedPhoneNumber`
+  // em schema.prisma) — sem isso, o Kanban mostrava por alguns segundos o
+  // histórico de um número antigo reconectado por outra pessoa (ex: o
+  // ex-sócio que usou o próprio WhatsApp pessoal nesta conta antes) junto
+  // com o do número atualmente conectado.
+  const connection = await prisma.whatsappConnection.findUnique({
     where: { userId: tenantId },
-    orderBy: { lastMessageAt: "desc" },
-    select: {
-      id: true,
-      contactName: true,
-      contactPhone: true,
-      contactAvatarUrl: true,
-      aiEnabled: true,
-      pipelineStage: true,
-      lastMessageAt: true,
-      lastMessagePreview: true,
-    },
+    select: { phoneNumber: true },
   });
+
+  const chats = connection?.phoneNumber
+    ? await prisma.chat.findMany({
+        where: { userId: tenantId, connectedPhoneNumber: connection.phoneNumber },
+        orderBy: { lastMessageAt: "desc" },
+        select: {
+          id: true,
+          contactName: true,
+          contactPhone: true,
+          contactAvatarUrl: true,
+          aiEnabled: true,
+          pipelineStage: true,
+          lastMessageAt: true,
+          lastMessagePreview: true,
+        },
+      })
+    : [];
 
   return (
     <div className="flex h-full flex-col p-4 md:p-6">
