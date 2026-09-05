@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getTenantId } from "@/lib/tenant";
@@ -6,6 +7,12 @@ import { GoogleIntegrationCard } from "@/components/settings/google-integration-
 
 export default async function SettingsPage() {
   const session = await auth();
+  // Só o dono do tenant decide o comportamento da IA (prompt, modelo) e a
+  // própria chave da OpenAI — um FUNCIONARIO (conta de equipe) não deveria
+  // conseguir reescrever isso nem trocar uma credencial de faturamento.
+  if (session!.user.role === "FUNCIONARIO") {
+    redirect("/dashboard");
+  }
   const config = await prisma.config.findUnique({ where: { userId: getTenantId(session!.user) } });
 
   return (

@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/encryption";
@@ -23,10 +24,21 @@ import { getCloudApiMediaBytes } from "@/lib/whatsapp-cloud-api";
  * URL do webhook (ver `hub.challenge`): só nesse momento, nunca depois.
  * POST — eventos de fato (mensagem recebida, status de entrega).
  *
- * Autenticado por `WHATSAPP_CLOUD_VERIFY_TOKEN` (usado só na verificação
- * GET — a Meta não reenvia esse token nos POSTs subsequentes; em produção,
- * validar a assinatura `X-Hub-Signature-256` do corpo seria o próximo passo
- * de segurança, ainda não implementado aqui).
+ * Autenticação em duas camadas:
+ *   - GET: `WHATSAPP_CLOUD_VERIFY_TOKEN` (só usado nessa verificação única).
+ *   - POST (2026-09-05): assinatura `X-Hub-Signature-256` — a Meta assina
+ *     TODO evento com HMAC-SHA256 usando o "App Secret" (Meta for Developers
+ *     → seu App → Configurações Básicas → Chave Secreta do App), então
+ *     comparamos essa assinatura contra `WHATSAPP_CLOUD_APP_SECRET` antes de
+ *     processar qualquer coisa. Sem isso, o `phone_number_id` do payload
+ *     (usado pra resolver QUAL tenant a mensagem pertence) é 100%
+ *     controlado por quem chama o POST — sem verificar a assinatura,
+ *     qualquer um na internet que soubesse o `phone_number_id` de um tenant
+ *     conseguiria forjar mensagem/evento em nome de um contato qualquer.
+ *     Fail-closed: sem `WHATSAPP_CLOUD_APP_SECRET` configurado, todo POST é
+ *     rejeitado (seguro, já que nenhum tenant usa CLOUD_API em produção
+ *     ainda — configurar essa variável faz parte do checklist de migração
+ *     da KFG, ver PROJECT_HANDOFF.md).
  */
 
 type CloudApiMessage = {
@@ -119,10 +131,38 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ error: "Verificação falhou" }, { status: 403 });
 }
 
+/** Compara a assinatura `X-Hub-Signature-256` (formato `sha256=<hex>`) contra o HMAC calculado com o App Secret — comparação em tempo constante, nunca `===` direto numa string derivada de segredo. */
+function hasValidMetaSignature(rawBody: string, signatureHeader: string | null, appSecret: string): boolean {
+  if (!signatureHeader) return false;
+  const [algo, signatureHex] = signatureHeader.split("=");
+  if (algo !== "sha256" || !signatureHex) return false;
+
+  const expectedHex = crypto.createHmac("sha256", appSecret).update(rawBody, "utf8").digest("hex");
+  const expected = Buffer.from(expectedHex, "hex");
+  const provided = Buffer.from(signatureHex, "hex");
+  if (expected.length !== provided.length) return false;
+  return crypto.timingSafeEqual(expected, provided);
+}
+
 export async function POST(request: NextRequest) {
+  const appSecret = process.env.WHATSAPP_CLOUD_APP_SECRET;
+  const rawBody = await request.text();
+
+  if (!appSecret) {
+    console.error(
+      "[webhook/whatsapp-cloud] WHATSAPP_CLOUD_APP_SECRET não configurado — recusando POST (fail-closed). Configurar em Meta for Developers → App → Configurações Básicas → Chave Secreta do App, e cadastrar na Vercel + .env local."
+    );
+    return NextResponse.json({ error: "Webhook não configurado" }, { status: 401 });
+  }
+
+  if (!hasValidMetaSignature(rawBody, request.headers.get("x-hub-signature-256"), appSecret)) {
+    console.warn("[webhook/whatsapp-cloud] Assinatura X-Hub-Signature-256 ausente ou inválida — requisição rejeitada.");
+    return NextResponse.json({ error: "Assinatura inválida" }, { status: 401 });
+  }
+
   let body: CloudApiWebhookBody;
   try {
-    body = await request.json();
+    body = JSON.parse(rawBody);
   } catch {
     return NextResponse.json({ ok: true });
   }

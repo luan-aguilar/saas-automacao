@@ -27,7 +27,7 @@ const navItems: NavItem[] = [
   { href: "/chat", label: "Atendimento", icon: MessageSquareText },
   { href: "/pipeline", label: "Funil de Atendimento", icon: Kanban, requiresPipeline: true },
   { href: "/whatsapp", label: "Conexão WhatsApp", icon: QrCode },
-  { href: "/settings", label: "Configurações", icon: Settings },
+  { href: "/settings", label: "Configurações", icon: Settings, hiddenForFuncionario: true },
   { href: "/team", label: "Minha Equipe", icon: UsersRound, ownerOnly: true },
   { href: "/clients", label: "Clientes", icon: Users, masterOnly: true },
   { href: "/templates", label: "Templates", icon: Sparkles, masterOnly: true },

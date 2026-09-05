@@ -246,6 +246,31 @@ async function resolveOutboundFromMeMessage(params: {
   });
 }
 
+/**
+ * Mascara um segredo pra log — nunca o valor completo. Esse token é o ÚNICO
+ * que protege este webhook (compartilhado entre TODOS os tenants — o tenant
+ * de verdade é resolvido depois, pelo `instance` do payload), então logar
+ * ele por inteiro em texto puro no log da Vercel equivale a publicar a senha
+ * do cofre: qualquer um com acesso de leitura ao log passaria a conseguir
+ * forjar evento de QUALQUER tenant (mensagem falsa, exclusão de conversa
+ * inteira, etc.).
+ */
+function maskSecret(value: string | null): string | null {
+  if (!value) return value;
+  return value.length <= 4 ? "****" : `***${value.slice(-4)}`;
+}
+
+/** Remove o `?token=...` da URL antes de logar, pelo mesmo motivo de `maskSecret`. */
+function redactTokenFromUrl(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    if (url.searchParams.has("token")) url.searchParams.set("token", "***");
+    return url.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
 export async function POST(request: NextRequest) {
   const queryToken = request.nextUrl.searchParams.get("token");
   const apikeyHeader = request.headers.get("apikey");
@@ -255,13 +280,15 @@ export async function POST(request: NextRequest) {
 
   // Log incondicional — antes de qualquer validação — para conseguir auditar
   // no log da Vercel exatamente o que a Evolution API está enviando, mesmo
-  // quando a requisição acaba sendo rejeitada logo abaixo.
+  // quando a requisição acaba sendo rejeitada logo abaixo. Valores mascarados
+  // (ver `maskSecret`) — só o suficiente pra confirmar "chegou algo parecido
+  // com o token certo", nunca o segredo completo.
   console.log("[WEBHOOK HEADERS/QUERY]", {
-    url: request.url,
-    queryToken,
-    apikeyHeader,
-    xApiKeyHeader,
-    authorizationHeader,
+    url: redactTokenFromUrl(request.url),
+    queryToken: maskSecret(queryToken),
+    apikeyHeader: maskSecret(apikeyHeader),
+    xApiKeyHeader: maskSecret(xApiKeyHeader),
+    authorizationHeader: authorizationHeader ? "***" : null,
   });
 
   const token = queryToken || apikeyHeader || xApiKeyHeader || bearerToken;
@@ -270,7 +297,13 @@ export async function POST(request: NextRequest) {
   if (!token || !expectedToken || token !== expectedToken) {
     console.warn(
       "[webhook/whatsapp] Nenhuma credencial válida encontrada (query `token`, header `apikey`, `x-api-key` ou `authorization`) — requisição rejeitada.",
-      { queryToken, apikeyHeader, xApiKeyHeader, authorizationHeader, tokenConfigurado: Boolean(expectedToken) }
+      {
+        queryToken: maskSecret(queryToken),
+        apikeyHeader: maskSecret(apikeyHeader),
+        xApiKeyHeader: maskSecret(xApiKeyHeader),
+        authorizationHeader: authorizationHeader ? "***" : null,
+        tokenConfigurado: Boolean(expectedToken),
+      }
     );
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }

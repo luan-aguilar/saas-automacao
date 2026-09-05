@@ -19,6 +19,12 @@ export async function GET() {
   if (!session?.user) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
+  // Só o dono do tenant (MASTER/CLIENTE) — um FUNCIONARIO não deveria ver
+  // nem, mais importante ainda, reescrever o prompt da IA ou a chave da
+  // OpenAI (ver POST abaixo). Mesmo padrão de /api/flows, /api/team, /api/clients.
+  if (session.user.role === "FUNCIONARIO") {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
+  }
 
   const config = await prisma.config.findUnique({ where: { userId: getTenantId(session.user) } });
 
@@ -41,6 +47,9 @@ export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  }
+  if (session.user.role === "FUNCIONARIO") {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
   }
 
   const body = await request.json();

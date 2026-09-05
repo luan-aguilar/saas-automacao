@@ -38,6 +38,13 @@ export const authConfig = {
         return Response.redirect(new URL("/dashboard", request.nextUrl));
       }
 
+      // "Configurações" (prompt da IA, modelo, chave da OpenAI) também é só
+      // do dono — um FUNCIONARIO não deveria conseguir reescrever o
+      // comportamento do robô nem trocar uma credencial de faturamento.
+      if (pathname.startsWith("/settings") && auth.user.role === "FUNCIONARIO") {
+        return Response.redirect(new URL("/dashboard", request.nextUrl));
+      }
+
       // "Minha Equipe" é só do dono do tenant (CLIENTE) — MASTER audita pelo
       // detalhe do cliente em /clients, e um FUNCIONARIO não gerencia outros.
       if (pathname.startsWith("/team") && auth.user.role !== "CLIENTE") {
