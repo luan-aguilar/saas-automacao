@@ -51,8 +51,22 @@ Ao contrário de handoffs antigos deste arquivo, o motor de fluxos está **compl
 Cada tenant tem `WhatsappConnection.provider` (`EVOLUTION` default | `CLOUD_API`), decidido caso a caso conforme o número do cliente:
 
 - **EVOLUTION** (padrão, usado por Home Concept e qualquer tenant novo por padrão): self-hosted, Baileys por trás, NÃO OFICIAL. Cliente HTTP em `src/lib/evolution-api.ts`, recebe eventos em `POST /api/webhooks/whatsapp`. Confirmado: seguro pro uso atual (fluxos disparados pelo CLIENTE mandando mensagem primeiro — inbound), mas **disparo em massa/frio pra contatos sem histórico de conversa é receita pra banimento de número**. Se algum dia pedirem pra automatizar disparo em massa, NÃO construa sem alertar explicitamente sobre esse risco (já houve um caso real: Lucas tentou fechar isso com um cliente sem consultar Luan). Também não convive bem num número que JÁ está registrado na API oficial da Meta em outro lugar — derruba a sessão direto (foi o que aconteceu com a KFG).
-- **CLOUD_API** (em construção, 2026-09-04, pra KFG): API oficial do WhatsApp Business Platform da Meta (Graph API). Cliente HTTP em `src/lib/whatsapp-cloud-api.ts`, recebe eventos em `POST /api/webhooks/whatsapp-cloud` (rota SEPARADA da do Evolution — payloads sem nenhuma relação). Credenciais por tenant: `cloudApiPhoneNumberId` + `cloudApiWabaId` + `cloudApiAccessTokenEncrypted` (criptografado, mesmo esquema AES-256-GCM da chave da OpenAI). `src/lib/whatsapp-service.ts` (`resolveSendTarget`) decide o provedor uma vez por envio — `flow-engine.ts` não sabe/não precisa saber qual provedor está por trás.
-  - **Pendências antes de ativar a KFG**: (1) `npx prisma db push` (ver pendência crítica no topo); (2) Luan terminar a configuração no Meta for Developers (App + WABA + System User com token permanente) e me passar `phoneNumberId`/`wabaId`/token; (3) cadastrar `WHATSAPP_CLOUD_VERIFY_TOKEN` na Vercel E no webhook da Meta; (4) popular `WhatsappConnection` da KFG com `provider: CLOUD_API` + as credenciais (ainda não existe UI pra isso — decisão consciente de não construir uma tela só pro primeiro caso de uso, fazer isso direto no banco/script quando chegar a hora).
+- **CLOUD_API** (código completo e no ar desde 2026-09-04, ainda não ativado pra nenhum tenant): API oficial do WhatsApp Business Platform da Meta (Graph API). Cliente HTTP em `src/lib/whatsapp-cloud-api.ts` (enviar texto/botão/lista, baixar mídia), recebe eventos em `POST /api/webhooks/whatsapp-cloud` (rota SEPARADA da do Evolution — payloads sem nenhuma relação, verificação GET via `hub.challenge` + `WHATSAPP_CLOUD_VERIFY_TOKEN`). Credenciais por tenant: `cloudApiPhoneNumberId` + `cloudApiWabaId` + `cloudApiAccessTokenEncrypted` (criptografado, mesmo esquema AES-256-GCM da chave da OpenAI). `src/lib/whatsapp-service.ts` (`resolveSendTarget`) decide o provedor uma vez por envio — `flow-engine.ts` **e** a Central de Atendimento (`/chat`, envio manual por humano) não sabem/não precisam saber qual provedor está por trás, já usam a mesma função.
+
+  ### ⚠️ Antes de migrar um número: ele fica EXCLUSIVO da API
+  Confirmado com o Luan (2026-09-05): depois que um número entra na Cloud API oficial da Meta, ele **não pode mais ser usado no app do WhatsApp/WhatsApp Business do celular, nem no WhatsApp Web/Desktop**. É uma restrição da própria Meta, não contornável. Isso significa que a equipe do tenant (ex: KFG) passa a assumir conversas exclusivamente pela **Central de Atendimento (`/chat`) do próprio SaaS** — nunca mais pelo celular. **Alinhar isso explicitamente com o cliente ANTES de migrar** — se algum atendente depende de responder pelo celular pessoal, o fluxo de trabalho deles quebra.
+
+  ### Checklist — o que falta pra migrar a KFG (nessa ordem)
+  1. ~~`npx prisma db push` contra produção~~ — **feito em 2026-09-04**.
+  2. ~~Código do cliente Graph API + webhook + integração no `whatsapp-service.ts`~~ — **feito, em produção desde 2026-09-04**.
+  3. ~~Gerar `WHATSAPP_CLOUD_VERIFY_TOKEN`~~ — **feito em 2026-09-05, já está no `.env` local**. **Falta**: cadastrar essa MESMA variável na Vercel (Settings → Environment Variables do projeto).
+  4. ~~Script pra configurar um tenant como `CLOUD_API` sem precisar de UI~~ — **feito**: `scripts/set-cloud-api-credentials.ts` (uso: `npx tsx scripts/set-cloud-api-credentials.ts <email> <phoneNumberId> <wabaId> <accessToken>`).
+  5. **Pendência do Luan, ainda não feita**: terminar a configuração no Meta for Developers — App com produto WhatsApp ativado, WABA da KFG vinculada, System User com **token permanente** (não o token de teste de 24h), anotar `phone_number_id` + `WABA ID` + token.
+  6. **Pendência do Luan**: alinhar com a KFG a mudança de fluxo de trabalho (ver aviso acima) — decisão de negócio, não técnica.
+  7. Depois do passo 5: rodar o script do passo 4 com os 3 valores reais.
+  8. Cadastrar a URL do webhook no painel da Meta (`https://saas-automacao-eight.vercel.app/api/webhooks/whatsapp-cloud`), colando o mesmo `WHATSAPP_CLOUD_VERIFY_TOKEN` no campo "Verify Token" — a verificação só passa se essa variável já estiver na Vercel (passo 3).
+  9. Testar: mandar mensagem de um celular de teste pro número da KFG, confirmar que chega no `/chat` e que o fluxo/IA responde normalmente; testar também uma resposta manual de humano pelo `/chat`.
+
   - **Custo real, não só técnico**: a partir de 01/10/2026 a Meta cobra por mensagem de resposta livre dentro da janela de atendimento (`categoria "service"` — hoje grátis). Isso muda a margem de vender robô pra clientes na API oficial — considerar isso ao fechar preço.
   - **Se quiser virar plataforma self-service tipo ChatGuru** (onboarding de QUALQUER cliente futuro direto pela API oficial, sem repetir esse processo manual): existe o programa "Tech Provider" + "Embedded Signup" da Meta — pesquisado, mas NÃO iniciado ainda (decisão de esperar validar o caso da KFG primeiro).
 
@@ -67,6 +81,7 @@ Cada tenant tem `WhatsappConnection.provider` (`EVOLUTION` default | `CLOUD_API`
 - `instanceNameFor(userId)` é determinístico — recalculável a qualquer momento.
 - Sincronização de histórico ao conectar (tipo WhatsApp Web) **não existe ainda** — o webhook só processa mensagens novas a partir do momento da conexão. Feature real, ainda não construída.
 - Sempre rodar `npx tsc --noEmit` e `npm run build` antes de dar push — schema muda com `prisma db push` (sem histórico de migração), não `migrate dev`.
+- **Toda variável de ambiente nova cadastrada na Vercel também tem que ir pro `.env` local** (e vice-versa) — o Luan trabalha de mais de uma máquina e precisa que o `.env` seja um espelho completo do que está configurado em produção. Nunca considerar "cadastrei na Vercel" como passo final.
 
 ## Arquivos-chave
 
@@ -74,7 +89,8 @@ Cada tenant tem `WhatsappConnection.provider` (`EVOLUTION` default | `CLOUD_API`
 |---|---|
 | `src/lib/flow-engine.ts` | Motor de execução dos fluxos — completo, todos os tipos de bloco implementados, agnóstico de provedor de WhatsApp |
 | `src/lib/evolution-api.ts` | Cliente HTTP da Evolution API v2 (provedor não-oficial) |
-| `src/lib/whatsapp-cloud-api.ts` | Cliente HTTP da API oficial da Meta (Graph API) — em construção pra KFG |
+| `src/lib/whatsapp-cloud-api.ts` | Cliente HTTP da API oficial da Meta (Graph API) — completo, aguardando credenciais reais da KFG |
+| `scripts/set-cloud-api-credentials.ts` | Configura um tenant como `CLOUD_API` (sem UI) — rodar quando a KFG tiver as credenciais da Meta |
 | `src/lib/whatsapp-service.ts` | Camada de envio única (`resolveSendTarget` escolhe Evolution ou Cloud API por tenant) |
 | `src/app/api/webhooks/whatsapp/route.ts` | Recebe eventos da Evolution API (mensagens, status de conexão) |
 | `src/app/api/webhooks/whatsapp-cloud/route.ts` | Recebe eventos da API oficial da Meta (rota separada, payload diferente) |

@@ -40,3 +40,4 @@ prisma/dev.db-journal
 
 .vercel
 .env*
+.claude/settings.local.json
