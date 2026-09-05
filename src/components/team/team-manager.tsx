@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { formatPhone } from "@/lib/utils";
 import { confirm } from "@/lib/confirm-store";
+import { toast } from "@/lib/toast-store";
 import { Plus, KeyRound, Power, Copy, Check, Pencil, Trash2 } from "lucide-react";
 
 type EmployeeRow = {
@@ -73,14 +74,23 @@ export function TeamManager({ initialEmployees }: { initialEmployees: EmployeeRo
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action }),
     });
-    const data = await res.json();
-    if (!res.ok) return;
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast({
+        title: "Não foi possível concluir a ação",
+        description: data.error,
+        variant: "destructive",
+      });
+      return;
+    }
 
     if (action === "RESET_PASSWORD" && data.temporaryPassword) {
       const employee = employees.find((e) => e.id === id);
       if (employee) {
         setGeneratedCredentials({ email: employee.email, password: data.temporaryPassword });
       }
+    } else {
+      toast({ title: action === "ACTIVATE" ? "Conta ativada" : "Conta desativada", variant: "success" });
     }
 
     refreshList();
@@ -124,8 +134,13 @@ export function TeamManager({ initialEmployees }: { initialEmployees: EmployeeRo
     }
 
     const res = await fetch(`/api/team/${id}`, { method: "DELETE" });
-    if (!res.ok) return;
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      toast({ title: "Não foi possível excluir a conta", description: data.error, variant: "destructive" });
+      return;
+    }
 
+    toast({ title: "Conta excluída", variant: "success" });
     refreshList();
   }
 

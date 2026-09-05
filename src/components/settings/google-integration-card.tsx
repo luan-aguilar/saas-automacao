@@ -6,7 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { confirm } from "@/lib/confirm-store";
+import { toast } from "@/lib/toast-store";
 import { CalendarClock, CheckCircle2 } from "lucide-react";
 
 type GoogleConfig = {
@@ -83,8 +85,13 @@ export function GoogleIntegrationCard() {
     ) {
       return;
     }
-    await fetch("/api/google/disconnect", { method: "POST" });
+    const res = await fetch("/api/google/disconnect", { method: "POST" });
+    if (!res.ok) {
+      toast({ title: "Não foi possível desconectar a conta Google", variant: "destructive" });
+      return;
+    }
     setConfig((prev) => (prev ? { ...prev, connected: false, googleEmail: null } : prev));
+    toast({ title: "Conta Google desconectada", variant: "success" });
   }
 
   if (loading) {
@@ -95,8 +102,9 @@ export function GoogleIntegrationCard() {
             <CalendarClock className="h-4 w-4" /> Integração Google (Agenda e Planilha)
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">Carregando...</p>
+        <CardContent className="space-y-2">
+          <Skeleton className="h-4 w-1/3" />
+          <Skeleton className="h-9 w-40" />
         </CardContent>
       </Card>
     );

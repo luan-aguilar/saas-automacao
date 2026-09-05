@@ -35,6 +35,24 @@ export function QrDisplay({ initial }: { initial: StatusResponse }) {
   const [error, setError] = useState<string | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // `qrExpiresAt` já vinha na resposta, mas nada comparava com o relógio —
+  // o QR Code (expira em 60s no servidor) ficava na tela "morto" pra sempre,
+  // sem nenhum aviso, até o operador clicar em "Conectar" de novo por conta
+  // própria. Este `now` só existe pra forçar um re-render a cada segundo e
+  // manter essa comparação sempre atualizada (nada aqui muda o estado real).
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const qrExpired =
+    data.status === "QR_PENDING" && !!data.qrExpiresAt && new Date(data.qrExpiresAt).getTime() <= now;
+  const qrSecondsLeft =
+    data.status === "QR_PENDING" && data.qrExpiresAt && !qrExpired
+      ? Math.max(0, Math.round((new Date(data.qrExpiresAt).getTime() - now) / 1000))
+      : null;
+
   useEffect(() => {
     // Polling do status real da instância na Evolution API a cada 3s
     // (GET /instance/connectionState/{instanceName} por trás de /api/whatsapp/status).
@@ -138,15 +156,29 @@ export function QrDisplay({ initial }: { initial: StatusResponse }) {
               <CheckCircle2 className="h-12 w-12 text-success" />
               <p className="text-sm font-medium">WhatsApp conectado com sucesso</p>
             </div>
+          ) : qrExpired ? (
+            <div className="flex flex-col items-center gap-3 text-center">
+              <AlertTriangle className="h-10 w-10 text-gold" />
+              <p className="text-sm font-medium">Esse QR Code expirou</p>
+              <Button size="sm" onClick={handleConnect} disabled={loading}>
+                <RefreshCw className={loading ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} />
+                Gerar novo QR Code
+              </Button>
+            </div>
           ) : data.qrCode ? (
-            <Image
-              src={data.qrCode}
-              alt="QR Code para pareamento do WhatsApp"
-              width={280}
-              height={280}
-              unoptimized
-              className="h-full w-full rounded-md object-contain"
-            />
+            <div className="flex h-full w-full flex-col items-center gap-2">
+              <Image
+                src={data.qrCode}
+                alt="QR Code para pareamento do WhatsApp"
+                width={280}
+                height={280}
+                unoptimized
+                className="h-full w-full rounded-md object-contain"
+              />
+              {qrSecondsLeft !== null && (
+                <p className="text-xs text-muted-foreground">Expira em {qrSecondsLeft}s</p>
+              )}
+            </div>
           ) : (
             <div className="flex flex-col items-center gap-2 text-center text-muted-foreground">
               <Smartphone className="h-10 w-10" />

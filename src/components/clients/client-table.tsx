@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { formatPhone } from "@/lib/utils";
+import { toast } from "@/lib/toast-store";
 import { Plus, KeyRound, Power, Copy, Check, UsersRound } from "lucide-react";
 import Link from "next/link";
 
@@ -69,14 +70,23 @@ export function ClientTable({ initialClients }: { initialClients: ClientRow[] })
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action }),
     });
-    const data = await res.json();
-    if (!res.ok) return;
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast({
+        title: "Não foi possível concluir a ação",
+        description: data.error,
+        variant: "destructive",
+      });
+      return;
+    }
 
     if (action === "RESET_PASSWORD" && data.temporaryPassword) {
       const client = clients.find((c) => c.id === id);
       if (client) {
         setGeneratedCredentials({ email: client.email, password: data.temporaryPassword });
       }
+    } else {
+      toast({ title: action === "ACTIVATE" ? "Cliente ativado" : "Cliente desativado", variant: "success" });
     }
 
     startTransition(async () => {

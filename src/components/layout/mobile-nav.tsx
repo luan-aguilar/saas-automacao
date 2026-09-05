@@ -51,6 +51,7 @@ export function MobileNav({ role, hasPipeline }: { role: Role; hasPipeline: bool
               <button
                 type="button"
                 onClick={() => setOpen(false)}
+                aria-label="Fechar menu"
                 className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 <X className="h-5 w-5" />
