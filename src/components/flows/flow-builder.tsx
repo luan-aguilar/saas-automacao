@@ -36,6 +36,7 @@ import { getTemplateDefinition } from "@/lib/templates/registry";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/lib/toast-store";
+import { confirm } from "@/lib/confirm-store";
 import { Save, Play, Pause, Undo2, Redo2, AlertTriangle, Sparkles, Blocks } from "lucide-react";
 
 const nodeTypes: NodeTypes = {
@@ -343,13 +344,17 @@ function FlowBuilderInner({
     setSelectedNodeId(null);
   }
 
-  function handleLoadTemplate() {
+  async function handleLoadTemplate() {
     const template = getTemplateDefinition(selectedTemplateKey);
     if (!template) return;
 
-    const proceed = window.confirm(
-      `Carregar o template "${template.name}"?\n\nIsso substitui todos os blocos e conexões atuais deste fluxo no canvas (a substituição só é salva de fato quando você clicar em "Salvar fluxo").`
-    );
+    const proceed = await confirm({
+      title: `Carregar o template "${template.name}"?`,
+      description:
+        'Isso substitui todos os blocos e conexões atuais deste fluxo no canvas (a substituição só é salva de fato quando você clicar em "Salvar fluxo").',
+      confirmLabel: "Carregar template",
+      variant: "destructive",
+    });
     if (!proceed) return;
 
     const { nodes: templateNodes, edges: templateEdges } = template.load();

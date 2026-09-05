@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { formatPhone, cn } from "@/lib/utils";
+import { confirm } from "@/lib/confirm-store";
 import { Send, Bot, ListChecks, Trash2, X, ArrowLeft } from "lucide-react";
 import type { ChatSummary } from "./conversation-list";
 
@@ -97,7 +98,14 @@ export function ChatPanel({
   }
 
   async function handleDeleteSingle(messageId: string) {
-    if (!window.confirm("Apagar esta mensagem? Isso apaga só aqui no SaaS — não afeta o WhatsApp do contato.")) {
+    if (
+      !(await confirm({
+        title: "Apagar esta mensagem?",
+        description: "Isso apaga só aqui no SaaS — não afeta o WhatsApp do contato.",
+        confirmLabel: "Apagar",
+        variant: "destructive",
+      }))
+    ) {
       return;
     }
     await deleteMessages([messageId]);
@@ -106,9 +114,12 @@ export function ChatPanel({
   async function handleDeleteSelected() {
     if (selectedIds.size === 0) return;
     if (
-      !window.confirm(
-        `Apagar ${selectedIds.size} mensagem(ns) selecionada(s)? Isso apaga só aqui no SaaS — não afeta o WhatsApp do contato.`
-      )
+      !(await confirm({
+        title: "Apagar mensagens selecionadas?",
+        description: `Apagar ${selectedIds.size} mensagem(ns) selecionada(s)? Isso apaga só aqui no SaaS — não afeta o WhatsApp do contato.`,
+        confirmLabel: "Apagar",
+        variant: "destructive",
+      }))
     ) {
       return;
     }

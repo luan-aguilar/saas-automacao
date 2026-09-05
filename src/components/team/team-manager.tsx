@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { formatPhone } from "@/lib/utils";
+import { confirm } from "@/lib/confirm-store";
 import { Plus, KeyRound, Power, Copy, Check, Pencil, Trash2 } from "lucide-react";
 
 type EmployeeRow = {
@@ -112,9 +113,12 @@ export function TeamManager({ initialEmployees }: { initialEmployees: EmployeeRo
 
   async function handleDelete(id: string, name: string) {
     if (
-      !window.confirm(
-        `Excluir definitivamente a conta de ${name}? Ela perde o acesso imediatamente. O histórico de ações que essa pessoa já realizou continua registrado.`
-      )
+      !(await confirm({
+        title: "Excluir esta conta?",
+        description: `Excluir definitivamente a conta de ${name}? Ela perde o acesso imediatamente. O histórico de ações que essa pessoa já realizou continua registrado.`,
+        confirmLabel: "Excluir",
+        variant: "destructive",
+      }))
     ) {
       return;
     }

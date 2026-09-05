@@ -7,6 +7,7 @@ import { ChatPanel } from "./chat-panel";
 import { Button } from "@/components/ui/button";
 import { MessageSquareText, QrCode } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { confirm } from "@/lib/confirm-store";
 
 type WhatsappStatus = "DISCONNECTED" | "CONNECTING" | "QR_PENDING" | "CONNECTED" | "ERROR";
 
@@ -93,7 +94,14 @@ export function ChatView({
   }
 
   async function handleClearChat(chatId: string) {
-    if (!window.confirm("Limpar todo o histórico desta conversa? Isso apaga só aqui no SaaS — não afeta o WhatsApp do contato.")) {
+    if (
+      !(await confirm({
+        title: "Limpar histórico desta conversa?",
+        description: "Isso apaga só aqui no SaaS — não afeta o WhatsApp do contato.",
+        confirmLabel: "Limpar",
+        variant: "destructive",
+      }))
+    ) {
       return;
     }
     const res = await fetch(`/api/chats/${chatId}/messages`, {
@@ -108,7 +116,14 @@ export function ChatView({
   }
 
   async function handleDeleteChat(chatId: string) {
-    if (!window.confirm("Excluir esta conversa? Isso remove o histórico daqui do SaaS — não afeta o WhatsApp do contato.")) {
+    if (
+      !(await confirm({
+        title: "Excluir esta conversa?",
+        description: "Isso remove o histórico daqui do SaaS — não afeta o WhatsApp do contato.",
+        confirmLabel: "Excluir",
+        variant: "destructive",
+      }))
+    ) {
       return;
     }
     const res = await fetch(`/api/chats/${chatId}`, { method: "DELETE" });

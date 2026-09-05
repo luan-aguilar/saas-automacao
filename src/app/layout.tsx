@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { APP_NAME, APP_TAGLINE } from "@/lib/constants";
 import { Toaster } from "@/components/ui/toaster";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
@@ -21,6 +22,7 @@ export default function RootLayout({
       <body className={`${inter.variable} font-sans antialiased`}>
         {children}
         <Toaster />
+        <ConfirmDialog />
       </body>
     </html>
   );

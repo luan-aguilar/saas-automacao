@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { confirm } from "@/lib/confirm-store";
 import { CalendarClock, CheckCircle2 } from "lucide-react";
 
 type GoogleConfig = {
@@ -72,7 +73,14 @@ export function GoogleIntegrationCard() {
   }
 
   async function handleDisconnect() {
-    if (!window.confirm("Desconectar sua conta Google? Os blocos de Agenda do Construtor de Fluxos param de funcionar até você conectar de novo.")) {
+    if (
+      !(await confirm({
+        title: "Desconectar conta Google?",
+        description: "Os blocos de Agenda do Construtor de Fluxos param de funcionar até você conectar de novo.",
+        confirmLabel: "Desconectar",
+        variant: "destructive",
+      }))
+    ) {
       return;
     }
     await fetch("/api/google/disconnect", { method: "POST" });

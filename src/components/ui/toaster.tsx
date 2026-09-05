@@ -36,7 +36,10 @@ export function Toaster() {
   if (items.length === 0) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-0 z-[100] flex flex-col items-center gap-2 p-4 sm:inset-x-auto sm:right-0 sm:items-end">
+    // top-16 (abaixo da Topbar de 56px, ver `Topbar` em src/components/layout/topbar.tsx)
+    // -- fixado em top-0 antes, o toast aparecia por cima do nome/e-mail do
+    // usuário e do botão de sair no canto superior direito.
+    <div className="pointer-events-none fixed inset-x-0 top-16 z-[100] flex flex-col items-center gap-2 p-4 sm:inset-x-auto sm:right-0 sm:items-end">
       {items.map((item) => {
         const Icon = variantIcons[item.variant];
         return (
