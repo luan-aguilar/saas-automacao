@@ -1,11 +1,16 @@
 /**
  * Camada de envio de mensagens usada pelo motor de fluxo (`flow-engine.ts`).
- * Internamente delega para o cliente da Evolution API (`evolution-api.ts`),
- * usando a instância já pareada do tenant (`WhatsappConnection.externalSessionId`).
+ * Cada tenant usa um de dois provedores (`WhatsappConnection.provider`):
+ *   - EVOLUTION: sessão não-oficial (Baileys) via `evolution-api.ts`,
+ *     instância própria em `WhatsappConnection.externalSessionId`.
+ *   - CLOUD_API: API oficial da Meta via `whatsapp-cloud-api.ts`, usando
+ *     `cloudApiPhoneNumberId` + token de acesso (criptografado no banco).
+ * `resolveSendTarget` decide qual usar uma única vez por envio — nenhuma das
+ * 3 funções de envio abaixo precisa saber o provedor por conta própria.
  */
 
 import { prisma } from "@/lib/prisma";
-import type { WhatsappConnection } from "@prisma/client";
+import { decrypt } from "@/lib/encryption";
 import {
   sendTextMessage,
   sendButtonsMessage,
@@ -15,30 +20,55 @@ import {
   type EvolutionListItem,
   type EvolutionConnectionState,
 } from "@/lib/evolution-api";
+import {
+  sendCloudApiTextMessage,
+  sendCloudApiButtonsMessage,
+  sendCloudApiListMessage,
+  type CloudApiListItem,
+} from "@/lib/whatsapp-cloud-api";
+import type { WhatsappConnection } from "@prisma/client";
 
-/** Resolve o nome de instância do tenant e avisa (sem lançar) se ela não estiver conectada. */
-async function resolveInstance(fromUserId: string): Promise<string> {
+type SendTarget =
+  | { provider: "EVOLUTION"; instanceName: string }
+  | { provider: "CLOUD_API"; phoneNumberId: string; accessToken: string };
+
+/** Resolve, uma única vez, qual provedor/credenciais usar pra enviar por este tenant — e avisa (sem lançar) se a conexão não estiver CONNECTED. */
+async function resolveSendTarget(fromUserId: string): Promise<SendTarget> {
   const connection = await prisma.whatsappConnection.findUnique({ where: { userId: fromUserId } });
-  const instanceName = connection?.externalSessionId ?? instanceNameFor(fromUserId);
 
   if (connection?.status !== "CONNECTED") {
     console.warn(
-      "[whatsapp-service] Enviando mensagem com instância fora do status CONNECTED — pode falhar:",
+      "[whatsapp-service] Enviando mensagem com conexão fora do status CONNECTED — pode falhar:",
       { fromUserId, status: connection?.status ?? "SEM_CONEXAO" }
     );
   }
 
-  return instanceName;
+  if (connection?.provider === "CLOUD_API") {
+    if (!connection.cloudApiPhoneNumberId || !connection.cloudApiAccessTokenEncrypted) {
+      throw new Error(
+        `[whatsapp-service] Tenant ${fromUserId} está configurado como CLOUD_API mas falta phoneNumberId ou token de acesso.`
+      );
+    }
+    return {
+      provider: "CLOUD_API",
+      phoneNumberId: connection.cloudApiPhoneNumberId,
+      accessToken: decrypt(connection.cloudApiAccessTokenEncrypted),
+    };
+  }
+
+  return { provider: "EVOLUTION", instanceName: connection?.externalSessionId ?? instanceNameFor(fromUserId) };
 }
 
 /**
- * Extrai o ID da mensagem (`key.id`) devolvido pela Evolution API ao enviar —
- * usado para reconhecer, quando o webhook ecoa essa mesma mensagem de volta
- * como um evento `fromMe`, que ela já foi registrada por nós (evita
- * duplicar no histórico da Central de Atendimento — ver
+ * Extrai o ID da mensagem devolvido pelo provedor ao enviar — usado para
+ * reconhecer, quando o webhook ecoa essa mesma mensagem de volta (só existe
+ * no Evolution API, como um evento `fromMe`), que ela já foi registrada por
+ * nós (evita duplicar no histórico da Central de Atendimento — ver
  * `resolveOutboundFromMeMessage` no webhook). Extração best-effort: se o
  * formato não bater, simplesmente não achamos o ID e o webhook cai no
- * fallback por conteúdo+tempo.
+ * fallback por conteúdo+tempo. Só usado no caminho EVOLUTION — o adaptador
+ * CLOUD_API já devolve o id pronto (`whatsapp-cloud-api.ts` não ecoa envio
+ * próprio via webhook, então não precisa desse fallback).
  */
 function extractSentMessageId(response: unknown): string | undefined {
   const data = response as { key?: { id?: string } } | null;
@@ -47,9 +77,9 @@ function extractSentMessageId(response: unknown): string | undefined {
 
 /**
  * Envia uma mensagem de texto simples via WhatsApp para um número específico,
- * usando a instância da Evolution API pareada por um determinado usuário (tenant).
+ * usando o provedor pareado pelo tenant (Evolution API ou API oficial da Meta).
  *
- * @param fromUserId  ID do usuário (tenant) cuja instância deve ser usada para enviar.
+ * @param fromUserId  ID do usuário (tenant) cuja conexão deve ser usada para enviar.
  * @param toPhone     Número do destinatário (com DDI, ex: "5511999998888").
  * @param message     Texto da mensagem já formatado (variáveis já interpoladas).
  */
@@ -59,8 +89,12 @@ export async function sendWhatsappMessage(
   message: string
 ): Promise<{ ok: true; externalId?: string } | { ok: false; error: string }> {
   try {
-    const instanceName = await resolveInstance(fromUserId);
-    const response = await sendTextMessage(instanceName, toPhone, message);
+    const target = await resolveSendTarget(fromUserId);
+    if (target.provider === "CLOUD_API") {
+      const { externalId } = await sendCloudApiTextMessage(target.phoneNumberId, target.accessToken, toPhone, message);
+      return { ok: true, externalId };
+    }
+    const response = await sendTextMessage(target.instanceName, toPhone, message);
     return { ok: true, externalId: extractSentMessageId(response) };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
@@ -77,8 +111,12 @@ export async function sendWhatsappButtons(
   buttons: string[]
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    const instanceName = await resolveInstance(fromUserId);
-    await sendButtonsMessage(instanceName, toPhone, title, buttons);
+    const target = await resolveSendTarget(fromUserId);
+    if (target.provider === "CLOUD_API") {
+      await sendCloudApiButtonsMessage(target.phoneNumberId, target.accessToken, toPhone, title, buttons);
+      return { ok: true };
+    }
+    await sendButtonsMessage(target.instanceName, toPhone, title, buttons);
     return { ok: true };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
@@ -96,8 +134,12 @@ export async function sendWhatsappList(
   items: EvolutionListItem[]
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    const instanceName = await resolveInstance(fromUserId);
-    await sendListMessage(instanceName, toPhone, title, buttonText, items);
+    const target = await resolveSendTarget(fromUserId);
+    if (target.provider === "CLOUD_API") {
+      await sendCloudApiListMessage(target.phoneNumberId, target.accessToken, toPhone, title, buttonText, items as CloudApiListItem[]);
+      return { ok: true };
+    }
+    await sendListMessage(target.instanceName, toPhone, title, buttonText, items);
     return { ok: true };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";

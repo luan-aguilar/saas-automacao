@@ -56,9 +56,9 @@
  *      se aplicam a um caminho específico ficam "Não se aplica" (mesmo
  *      princípio já usado no template da KFG).
  *
- * PLACEHOLDERS que ainda precisam ser preenchidos pela Klan antes de ativar:
- *   - Número(s) de WhatsApp que recebem a notificação de lead
- *     (`klan-lead-alert.recipientPhones`, hoje `[""]`).
+ * `klan-lead-alert.recipientPhones` está hoje com o número PESSOAL do Luan
+ * (pra ele testar o fluxo antes de apresentar pra Klan) — trocar pelo número
+ * do estúdio depois que ele validar.
  *
  * A fórmula de preço de tatuagem em `src/app/api/webhooks/tattoo-price/route.ts`
  * já usa valores/regras reais confirmados com a Klan (2026-09-04): preço fixo
@@ -89,10 +89,11 @@ function orConditionChain(
   tests: { value: string; operator?: "CONTAINS" | "EQUALS" }[],
   yesTarget: string,
   fallbackTarget: string,
+  xPos: number,
   yStart: number
 ): { nodes: Node[]; edges: Edge[]; firstId: string } {
   const nodes = tests.map((t, i) =>
-    conditionNode(`${idPrefix}${i + 1}`, { x: 200, y: yStart + i * 90 }, `${label} ("${t.value}")?`, t.value, t.operator ?? "CONTAINS")
+    conditionNode(`${idPrefix}${i + 1}`, { x: xPos, y: yStart + i * 160 }, `${label} ("${t.value}")?`, t.value, t.operator ?? "CONTAINS")
   );
   const edges: Edge[] = [];
   tests.forEach((_, i) => {
@@ -216,17 +217,26 @@ const HANDOFF_OUTROS_MESSAGE = `Entendi! Já vou te conectar com a pessoa certa 
 
 const HANDOFF_TATUAGEM_MESSAGE = `Já estou te conectando com um dos nossos artistas! Em breve alguém da equipe continua seu atendimento por aqui mesmo. 🐉`;
 
+// Colunas do layout visual (Construtor de Fluxo): tronco compartilhado no
+// centro, um branch por coluna (nodes têm 240px de largura fixa — ver
+// `NodeShell` — por isso 300px de distância entre colunas e 160/180px entre
+// nodes em sequência, o mesmo espaçamento já validado em
+// `beauty-salon-template.ts`, evitando a sobreposição que existia antes aqui).
+const COL_TATUAGEM = 250;
+const COL_TRONCO = 700;
+const COL_OUTROS = 1150;
+
 const NODES: Node[] = [
   {
     id: "klan-trigger",
     type: "trigger",
-    position: { x: 600, y: 0 },
+    position: { x: COL_TRONCO, y: 0 },
     data: { label: "Primeira mensagem", triggerType: "FIRST_MESSAGE" },
   },
 
   plainTextNode(
     "klan-ask-nome",
-    { x: 600, y: 140 },
+    { x: COL_TRONCO, y: 180 },
     "Boas-vindas + pergunta o nome",
     `Olá! Seja muito bem-vindo(a) à Klan Tattoo! 🐉✨ Somos um estúdio de tatuagem e piercing aqui em São Caetano do Sul.\n\nQual é o seu nome?`,
     true
@@ -234,27 +244,51 @@ const NODES: Node[] = [
   {
     id: "klan-ai-nome",
     type: "aiResponse",
-    position: { x: 600, y: 180 },
+    position: { x: COL_TRONCO, y: 360 },
     data: { label: "Captura (IA) — nome", useGlobalPrompt: false, customPrompt: AI_NOME_PROMPT, suppressReplyOnDone: true },
   },
 
-  plainTextNode("klan-menu-principal", { x: 600, y: 320 }, "Menu principal", MENU_PRINCIPAL_MESSAGE, true),
-  plainTextNode("klan-menu-principal-retry", { x: 200, y: 620 }, "Menu principal (não entendi)", MENU_PRINCIPAL_RETRY_MESSAGE, true),
+  plainTextNode("klan-menu-principal", { x: COL_TRONCO, y: 540 }, "Menu principal", MENU_PRINCIPAL_MESSAGE, true),
+  plainTextNode("klan-menu-principal-retry", { x: COL_OUTROS, y: 1060 }, "Menu principal (não entendi)", MENU_PRINCIPAL_RETRY_MESSAGE, true),
 
-  ...orConditionChain("klan-cond-tatuagem-", "Escolheu tatuagem?", [{ value: "tatuagem" }, { value: "1", operator: "EQUALS" }], "klan-set-tatuagem", "klan-cond-piercing-1", 400).nodes,
-  ...orConditionChain("klan-cond-piercing-", "Escolheu piercing?", [{ value: "piercing" }, { value: "2", operator: "EQUALS" }], "klan-set-piercing", "klan-cond-outros-1", 400).nodes,
-  ...orConditionChain("klan-cond-outros-", "Escolheu outros?", [{ value: "outro" }, { value: "3", operator: "EQUALS" }], "klan-set-outros", "klan-menu-principal-retry", 400).nodes,
+  ...orConditionChain(
+    "klan-cond-tatuagem-",
+    "Escolheu tatuagem?",
+    [{ value: "tatuagem" }, { value: "1", operator: "EQUALS" }],
+    "klan-set-tatuagem",
+    "klan-cond-piercing-1",
+    COL_TATUAGEM,
+    740
+  ).nodes,
+  ...orConditionChain(
+    "klan-cond-piercing-",
+    "Escolheu piercing?",
+    [{ value: "piercing" }, { value: "2", operator: "EQUALS" }],
+    "klan-set-piercing",
+    "klan-cond-outros-1",
+    COL_TRONCO,
+    740
+  ).nodes,
+  ...orConditionChain(
+    "klan-cond-outros-",
+    "Escolheu outros?",
+    [{ value: "outro" }, { value: "3", operator: "EQUALS" }],
+    "klan-set-outros",
+    "klan-menu-principal-retry",
+    COL_OUTROS,
+    740
+  ).nodes,
 
   // ===== TATUAGEM =====
-  plainTextNode("klan-set-tatuagem", { x: 900, y: 500 }, "Define serviço — tatuagem", "(silencioso)", false, false, {
+  plainTextNode("klan-set-tatuagem", { x: COL_TATUAGEM, y: 1240 }, "Define serviço — tatuagem", "(silencioso)", false, false, {
     setVariables: { servico_procurado: "Tatuagem" },
     skipSend: true,
   }),
-  plainTextNode("klan-ask-foto", { x: 900, y: 540 }, "Pede foto de referência", ASK_FOTO_TATUAGEM_MESSAGE, true),
+  plainTextNode("klan-ask-foto", { x: COL_TATUAGEM, y: 1400 }, "Pede foto de referência", ASK_FOTO_TATUAGEM_MESSAGE, true),
   {
     id: "klan-ai-tatuagem",
     type: "aiResponse",
-    position: { x: 900, y: 580 },
+    position: { x: COL_TATUAGEM, y: 1560 },
     data: {
       label: "Captura (IA + visão) — estilo, tamanho, região",
       useGlobalPrompt: false,
@@ -266,48 +300,48 @@ const NODES: Node[] = [
   {
     id: "klan-webhook-preco",
     type: "webhook",
-    position: { x: 900, y: 620 },
-    data: { label: "Calcula estimativa de preço", url: TATTOO_PRICE_WEBHOOK_URL },
+    position: { x: COL_TATUAGEM, y: 1720 },
+    data: { label: "Calcula preço (Flash fixo ou estimativa)", url: TATTOO_PRICE_WEBHOOK_URL },
   },
-  plainTextNode("klan-apresenta-preco", { x: 900, y: 660 }, "Apresenta estimativa de preço", APRESENTA_PRECO_MESSAGE, false, false),
-  plainTextNode("klan-handoff-tatuagem", { x: 900, y: 700 }, "Tatuagem — encaminhamento", HANDOFF_TATUAGEM_MESSAGE, false, true),
+  plainTextNode("klan-apresenta-preco", { x: COL_TATUAGEM, y: 1880 }, "Apresenta o valor", APRESENTA_PRECO_MESSAGE, false, false),
+  plainTextNode("klan-handoff-tatuagem", { x: COL_TATUAGEM, y: 2040 }, "Tatuagem — encaminhamento", HANDOFF_TATUAGEM_MESSAGE, false, true),
 
   // ===== PIERCING =====
-  plainTextNode("klan-set-piercing", { x: 1150, y: 500 }, "Define serviço — piercing", "(silencioso)", false, false, {
+  plainTextNode("klan-set-piercing", { x: COL_TRONCO, y: 1240 }, "Define serviço — piercing", "(silencioso)", false, false, {
     setVariables: { servico_procurado: "Piercing" },
     skipSend: true,
   }),
-  plainTextNode("klan-ask-piercing", { x: 1150, y: 540 }, "Pergunta piercing/joia", ASK_PIERCING_MESSAGE, true),
+  plainTextNode("klan-ask-piercing", { x: COL_TRONCO, y: 1400 }, "Pergunta piercing/joia", ASK_PIERCING_MESSAGE, true),
   {
     id: "klan-ai-piercing",
     type: "aiResponse",
-    position: { x: 1150, y: 580 },
+    position: { x: COL_TRONCO, y: 1560 },
     data: { label: "Captura (IA) — piercing/joia", useGlobalPrompt: false, customPrompt: AI_PIERCING_PROMPT, suppressReplyOnDone: true },
   },
-  plainTextNode("klan-handoff-piercing", { x: 1150, y: 620 }, "Piercing — encaminhamento", HANDOFF_PIERCING_MESSAGE, false, true),
+  plainTextNode("klan-handoff-piercing", { x: COL_TRONCO, y: 1720 }, "Piercing — encaminhamento", HANDOFF_PIERCING_MESSAGE, false, true),
 
   // ===== OUTROS =====
-  plainTextNode("klan-set-outros", { x: 1400, y: 500 }, "Define serviço — outros (placeholder)", "(silencioso)", false, false, {
+  plainTextNode("klan-set-outros", { x: COL_OUTROS, y: 1240 }, "Define serviço — outros (placeholder)", "(silencioso)", false, false, {
     setVariables: { servico_procurado: "Outros" },
     skipSend: true,
   }),
-  plainTextNode("klan-ask-outros", { x: 1400, y: 540 }, "Pergunta o que precisa", ASK_OUTROS_MESSAGE, true),
+  plainTextNode("klan-ask-outros", { x: COL_OUTROS, y: 1400 }, "Pergunta o que precisa", ASK_OUTROS_MESSAGE, true),
   {
     id: "klan-ai-outros",
     type: "aiResponse",
-    position: { x: 1400, y: 580 },
+    position: { x: COL_OUTROS, y: 1560 },
     data: { label: "Captura (IA) — outros assuntos", useGlobalPrompt: false, customPrompt: AI_OUTROS_PROMPT, suppressReplyOnDone: true },
   },
-  plainTextNode("klan-handoff-outros", { x: 1400, y: 620 }, "Outros — encaminhamento", HANDOFF_OUTROS_MESSAGE, false, true),
+  plainTextNode("klan-handoff-outros", { x: COL_OUTROS, y: 1720 }, "Outros — encaminhamento", HANDOFF_OUTROS_MESSAGE, false, true),
 
   // ===== NOTIFICAÇÃO FINAL COMPARTILHADA =====
   {
     id: "klan-lead-alert",
     type: "alertNotification",
-    position: { x: 1150, y: 760 },
+    position: { x: COL_TRONCO, y: 2220 },
     data: {
-      label: "Notificação: novo lead (número pendente)",
-      recipientPhones: [""],
+      label: "Notificação: novo lead",
+      recipientPhones: ["5511970177604"],
       message: LEAD_NOTIFICATION_MESSAGE,
     },
   },
@@ -320,9 +354,33 @@ const EDGES: Edge[] = [
 
   edge("klan-e-menu-cond-tatuagem", "klan-menu-principal", "klan-cond-tatuagem-1"),
   edge("klan-e-menuretry-cond-tatuagem", "klan-menu-principal-retry", "klan-cond-tatuagem-1"),
-  ...orConditionChain("klan-cond-tatuagem-", "Escolheu tatuagem?", [{ value: "tatuagem" }, { value: "1", operator: "EQUALS" }], "klan-set-tatuagem", "klan-cond-piercing-1", 400).edges,
-  ...orConditionChain("klan-cond-piercing-", "Escolheu piercing?", [{ value: "piercing" }, { value: "2", operator: "EQUALS" }], "klan-set-piercing", "klan-cond-outros-1", 400).edges,
-  ...orConditionChain("klan-cond-outros-", "Escolheu outros?", [{ value: "outro" }, { value: "3", operator: "EQUALS" }], "klan-set-outros", "klan-menu-principal-retry", 400).edges,
+  ...orConditionChain(
+    "klan-cond-tatuagem-",
+    "Escolheu tatuagem?",
+    [{ value: "tatuagem" }, { value: "1", operator: "EQUALS" }],
+    "klan-set-tatuagem",
+    "klan-cond-piercing-1",
+    COL_TATUAGEM,
+    740
+  ).edges,
+  ...orConditionChain(
+    "klan-cond-piercing-",
+    "Escolheu piercing?",
+    [{ value: "piercing" }, { value: "2", operator: "EQUALS" }],
+    "klan-set-piercing",
+    "klan-cond-outros-1",
+    COL_TRONCO,
+    740
+  ).edges,
+  ...orConditionChain(
+    "klan-cond-outros-",
+    "Escolheu outros?",
+    [{ value: "outro" }, { value: "3", operator: "EQUALS" }],
+    "klan-set-outros",
+    "klan-menu-principal-retry",
+    COL_OUTROS,
+    740
+  ).edges,
 
   // Tatuagem
   edge("klan-e-set-tatuagem-ask-foto", "klan-set-tatuagem", "klan-ask-foto"),

@@ -16,6 +16,7 @@ declare module "next-auth" {
     role: Role;
     mustChangePassword: boolean;
     tenantOwnerId: string | null;
+    sessionVersion: number;
   }
 }
 
@@ -25,5 +26,9 @@ declare module "next-auth/jwt" {
     role: Role;
     mustChangePassword: boolean;
     tenantOwnerId: string | null;
+    // Ver `sessionVersion` em `prisma/schema.prisma` e o callback `jwt` de
+    // `src/auth.ts` — usados só pra checagem de "deslogar de todas as sessões".
+    sessionVersion?: number;
+    sessionRevoked?: boolean;
   }
 }
