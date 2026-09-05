@@ -4,6 +4,7 @@ import { Zap, Sparkles, MessageSquare, GitFork, BellRing, Webhook, CalendarSearc
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { NODE_COLOR_CLASS } from "./node-colors";
 
 const paletteItems: {
   type:
@@ -26,63 +27,63 @@ const paletteItems: {
     label: "Entrada (Trigger)",
     description: "Primeira mensagem ou palavra-chave",
     icon: Zap,
-    colorClass: "bg-emerald-600",
+    colorClass: NODE_COLOR_CLASS.trigger,
   },
   {
     type: "aiResponse",
     label: "Resposta IA",
     description: "Usa o System Prompt + OpenAI",
     icon: Sparkles,
-    colorClass: "bg-violet-600",
+    colorClass: NODE_COLOR_CLASS.aiResponse,
   },
   {
     type: "staticMessage",
     label: "Mensagem Estática",
     description: "Texto pronto com botões/opções",
     icon: MessageSquare,
-    colorClass: "bg-sky-600",
+    colorClass: NODE_COLOR_CLASS.staticMessage,
   },
   {
     type: "condition",
     label: "Condição / Decisão",
     description: "Direciona o fluxo pela resposta",
     icon: GitFork,
-    colorClass: "bg-amber-600",
+    colorClass: NODE_COLOR_CLASS.condition,
   },
   {
     type: "keywordCatalog",
     label: "Catálogo de Palavras-chave",
     description: "Reconhece um item (ex: produto de um anúncio) pela mensagem e grava numa variável",
     icon: Tags,
-    colorClass: "bg-fuchsia-600",
+    colorClass: NODE_COLOR_CLASS.keywordCatalog,
   },
   {
     type: "alertNotification",
     label: "Notificação / Alerta",
     description: "Avisa um atendente via WhatsApp com os dados do lead",
     icon: BellRing,
-    colorClass: "bg-rose-600",
+    colorClass: NODE_COLOR_CLASS.alertNotification,
   },
   {
     type: "webhook",
     label: "Webhook / Automação Externa",
     description: "Envia os dados coletados pra outra ferramenta (ex: n8n, Zapier)",
     icon: Webhook,
-    colorClass: "bg-teal-600",
+    colorClass: NODE_COLOR_CLASS.webhook,
   },
   {
     type: "googleCalendarSlots",
     label: "Agenda: Buscar Horários",
     description: "Consulta horários livres na agenda Google conectada",
     icon: CalendarSearch,
-    colorClass: "bg-blue-600",
+    colorClass: NODE_COLOR_CLASS.googleCalendarSlots,
   },
   {
     type: "googleCalendarBook",
     label: "Agenda: Confirmar Agendamento",
     description: "Cria o evento (com Meet) e registra o lead na planilha",
     icon: CalendarCheck2,
-    colorClass: "bg-blue-700",
+    colorClass: NODE_COLOR_CLASS.googleCalendarBook,
   },
 ];
 

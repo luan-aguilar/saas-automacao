@@ -153,7 +153,7 @@ export function QrDisplay({ initial }: { initial: StatusResponse }) {
         <div className="flex aspect-square w-full items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 p-6">
           {data.status === "CONNECTED" ? (
             <div className="flex flex-col items-center gap-2 text-center">
-              <CheckCircle2 className="h-12 w-12 text-success" />
+              <CheckCircle2 className="h-10 w-10 text-success" />
               <p className="text-sm font-medium">WhatsApp conectado com sucesso</p>
             </div>
           ) : qrExpired ? (

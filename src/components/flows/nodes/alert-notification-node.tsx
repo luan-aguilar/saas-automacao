@@ -1,6 +1,7 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { BellRing } from "lucide-react";
 import { NodeShell } from "./node-shell";
+import { NODE_COLOR_CLASS, NODE_HANDLE_BG_CLASS, NODE_SOFT_BG_CLASS, NODE_TEXT_CLASS } from "../node-colors";
 import { getAlertRecipients, type AlertNotificationNode } from "./types";
 
 export function AlertNotificationNodeComponent({ data, selected }: NodeProps<AlertNotificationNode>) {
@@ -17,16 +18,16 @@ export function AlertNotificationNodeComponent({ data, selected }: NodeProps<Ale
       icon={BellRing}
       title={data.label || "Notificação / Alerta"}
       subtitle={subtitle}
-      colorClass="bg-rose-600"
+      colorClass={NODE_COLOR_CLASS.alertNotification}
       selected={selected}
     >
       {data.message && (
-        <p className="line-clamp-2 rounded bg-rose-600/10 px-1.5 py-1 text-[10px] text-rose-700">
+        <p className={`line-clamp-2 rounded px-1.5 py-1 text-[10px] ${NODE_SOFT_BG_CLASS.alertNotification} ${NODE_TEXT_CLASS.alertNotification}`}>
           {data.message}
         </p>
       )}
-      <Handle type="target" position={Position.Top} className="!h-3 !w-3 !bg-rose-600" />
-      <Handle type="source" position={Position.Bottom} className="!h-3 !w-3 !bg-rose-600" />
+      <Handle type="target" position={Position.Top} className={`!h-3 !w-3 ${NODE_HANDLE_BG_CLASS.alertNotification}`} />
+      <Handle type="source" position={Position.Bottom} className={`!h-3 !w-3 ${NODE_HANDLE_BG_CLASS.alertNotification}`} />
     </NodeShell>
   );
 }

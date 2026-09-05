@@ -214,7 +214,7 @@ export function ChatView({
       {isDisconnected && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60">
           <div className="mx-4 flex max-w-sm flex-col items-center gap-3 rounded-lg border border-border bg-card p-6 text-center shadow-lg">
-            <QrCode className="h-8 w-8 text-muted-foreground" />
+            <QrCode className="h-10 w-10 text-muted-foreground" />
             <p className="text-sm font-medium">WhatsApp desconectado</p>
             <p className="text-sm text-muted-foreground">
               Por favor, faça a conexão novamente na aba &ldquo;Conexão WhatsApp&rdquo; escaneando o QR code com
