@@ -171,8 +171,18 @@ function extractQr(data: unknown): EvolutionQrResult {
  * uma conversa muda no WhatsApp — inclusive quando o dono marca como lida
  * pelo próprio celular — usado pra manter `Chat.unreadCount` sincronizado
  * (ver webhook).
+ *
+ * `CHATS_DELETE` (adicionado 2026-09-05) — dispara quando uma conversa é
+ * apagada direto no WhatsApp (celular ou WhatsApp Web); usado pra apagar a
+ * mesma conversa aqui no SaaS também (ver webhook).
+ *
+ * IMPORTANTE: mudar esta lista só afeta conexões NOVAS (`createInstance`) ou
+ * que rodarem `setWebhook` de novo — uma instância já conectada continua
+ * com a lista de eventos antiga até reconectar. Ver
+ * `scripts/resync-evolution-webhooks.ts` pra atualizar tenants já
+ * conectados sem precisar desconectar/reconectar.
  */
-const WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE", "CHATS_UPDATE"];
+const WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE", "CHATS_UPDATE", "CHATS_DELETE"];
 
 /**
  * Cria a instância do zero na Evolution API e retorna o QR Code gerado.

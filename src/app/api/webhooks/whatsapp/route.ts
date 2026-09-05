@@ -68,6 +68,36 @@ function extractChatUpdates(data: unknown): EvolutionChatUpdate[] {
   return [];
 }
 
+/**
+ * Normaliza o payload de um evento CHATS_DELETE numa lista de JIDs
+ * apagados — igual à `extractChatUpdates`, tolera formatos variados (Baileys
+ * manda um array de JIDs em texto puro pra `chats.delete`, mas a Evolution
+ * API pode envolver isso em objetos com `id`/`remoteJid`, ou aninhar em
+ * `data.chats`/`data.ids`).
+ */
+function extractDeletedChatJids(data: unknown): string[] {
+  function toJid(item: unknown): string | null {
+    if (typeof item === "string") return item;
+    if (item && typeof item === "object") {
+      const obj = item as { id?: string; remoteJid?: string };
+      return obj.id ?? obj.remoteJid ?? null;
+    }
+    return null;
+  }
+
+  let items: unknown[] = [];
+  if (Array.isArray(data)) {
+    items = data;
+  } else if (data && typeof data === "object") {
+    const obj = data as { chats?: unknown; ids?: unknown };
+    if (Array.isArray(obj.chats)) items = obj.chats;
+    else if (Array.isArray(obj.ids)) items = obj.ids;
+    else items = [data];
+  }
+
+  return items.map(toJid).filter((jid): jid is string => !!jid);
+}
+
 /** Normaliza o estado de conexão do payload de um evento CONNECTION_UPDATE. */
 function extractConnectionState(data: EvolutionWebhookBody["data"]): EvolutionConnectionState {
   const raw = data?.state ?? data?.instance?.state;
@@ -313,6 +343,34 @@ export async function POST(request: NextRequest) {
         }
       } catch (error) {
         console.error("[webhook/whatsapp] Erro ao sincronizar CHATS_UPDATE:", error);
+      }
+    }
+
+    return NextResponse.json({ ok: true });
+  }
+
+  // CHATS_DELETE — a conversa foi apagada direto no WhatsApp (celular ou
+  // WhatsApp Web). Apaga a mesma conversa aqui no SaaS (Message é apagado em
+  // cascata, mesmo comportamento de `DELETE /api/chats/:id`) — nunca o
+  // contrário: isso não apaga nada NO WhatsApp do contato, só reflete uma
+  // exclusão que já aconteceu lá.
+  if (eventName === "CHATS_DELETE") {
+    const instanceName = body.instance;
+    if (instanceName) {
+      try {
+        const connection = await prisma.whatsappConnection.findFirst({
+          where: { externalSessionId: instanceName },
+        });
+        if (connection) {
+          for (const jid of extractDeletedChatJids(body.data)) {
+            if (jid.endsWith("@g.us")) continue;
+            await prisma.chat.deleteMany({
+              where: { userId: connection.userId, contactPhone: jid.split("@")[0] },
+            });
+          }
+        }
+      } catch (error) {
+        console.error("[webhook/whatsapp] Erro ao sincronizar CHATS_DELETE:", error);
       }
     }
 
