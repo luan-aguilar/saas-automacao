@@ -69,6 +69,11 @@ export function ChatPanel({
   // baixo do nome/cabeçalho da conversa NOVA até a busca terminar. Some
   // errado, ainda que só por um instante.
   const previousChatIdRef = useRef(chat.id);
+  // Controla o comportamento do scroll (ver efeito logo abaixo): a primeira
+  // vez que as mensagens de uma conversa aparecem, o scroll é instantâneo
+  // (a conversa já "nasce" no fim, como no WhatsApp Web) — só as mensagens
+  // seguintes (uma nova chegando com a conversa já aberta) usam animação.
+  const didInitialScrollRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -77,6 +82,7 @@ export function ChatPanel({
       previousChatIdRef.current = chat.id;
       setMessages([]);
       setMessagesLoading(true);
+      didInitialScrollRef.current = false;
     }
 
     // `isForced` só é true pra ESTA chamada imediata (a que reage a `chat.id`/
@@ -165,7 +171,9 @@ export function ChatPanel({
   }
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messages.length === 0) return;
+    bottomRef.current?.scrollIntoView({ behavior: didInitialScrollRef.current ? "smooth" : "auto" });
+    didInitialScrollRef.current = true;
   }, [messages.length]);
 
   async function handleSend() {
