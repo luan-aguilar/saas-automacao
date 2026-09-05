@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { formatPhone, cn } from "@/lib/utils";
+import { toast } from "@/lib/toast-store";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { MoreVertical, ArrowRight } from "lucide-react";
@@ -165,6 +166,11 @@ export function PipelineBoard({
     if (!res.ok) {
       // Reverte em caso de falha — mantém o quadro honesto com o que de fato está salvo.
       setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, pipelineStage: previousStage } : c)));
+      toast({
+        title: "Não foi possível mover o card",
+        description: "A etapa não foi salva — tente novamente.",
+        variant: "destructive",
+      });
     }
   }
 

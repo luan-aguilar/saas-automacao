@@ -35,6 +35,7 @@ import { KeywordCatalogNodeComponent } from "./nodes/keyword-catalog-node";
 import { getTemplateDefinition } from "@/lib/templates/registry";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { toast } from "@/lib/toast-store";
 import { Save, Play, Pause, Undo2, Redo2, AlertTriangle, Sparkles, Blocks } from "lucide-react";
 
 const nodeTypes: NodeTypes = {
@@ -367,11 +368,12 @@ function FlowBuilderInner({
     const violation = findInteractiveLimitViolation(nodes);
     if (violation) {
       const label = (violation.node.data as { label?: string }).label || "Mensagem Estática";
-      setSaveError(
+      const message =
         violation.reason === "list"
           ? `O bloco "${label}" tem mais de ${MAX_STATIC_MESSAGE_LIST_ITEMS} itens na lista. Reduza para no máximo ${MAX_STATIC_MESSAGE_LIST_ITEMS} antes de salvar (limite da API do WhatsApp).`
-          : `O bloco "${label}" tem mais de ${MAX_STATIC_MESSAGE_BUTTONS} botões. Reduza para no máximo ${MAX_STATIC_MESSAGE_BUTTONS} antes de salvar (limite da API do WhatsApp).`
-      );
+          : `O bloco "${label}" tem mais de ${MAX_STATIC_MESSAGE_BUTTONS} botões. Reduza para no máximo ${MAX_STATIC_MESSAGE_BUTTONS} antes de salvar (limite da API do WhatsApp).`;
+      setSaveError(message);
+      toast({ title: "Não foi possível salvar o fluxo", description: message, variant: "destructive" });
       return;
     }
 
@@ -385,9 +387,12 @@ function FlowBuilderInner({
     setSaving(false);
     if (res.ok) {
       setSavedAt(new Date());
+      toast({ title: "Fluxo salvo", variant: "success" });
     } else {
       const data = await res.json().catch(() => ({}));
-      setSaveError(data.error ?? "Erro ao salvar o fluxo.");
+      const message = data.error ?? "Erro ao salvar o fluxo.";
+      setSaveError(message);
+      toast({ title: "Não foi possível salvar o fluxo", description: message, variant: "destructive" });
     }
   }
 
