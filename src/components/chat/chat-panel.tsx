@@ -62,17 +62,23 @@ export function ChatPanel({
   useEffect(() => {
     let cancelled = false;
 
-    async function load() {
+    // `isForced` só é true pra ESTA chamada imediata (a que reage a `chat.id`/
+    // `reloadSignal` mudando) — o polling periódico abaixo nunca chama
+    // `onMessagesLoaded`. Sem essa distinção, um polling "de fundo" que por
+    // coincidência termina um instante antes do reload forçado (ex: logo
+    // após ligar/desligar a IA) fechava o toast de "aguarde" cedo demais,
+    // antes da mensagem de confirmação realmente aparecer.
+    async function load(isForced: boolean) {
       const res = await fetch(`/api/chats/${chat.id}/messages`);
       if (res.ok && !cancelled) {
         const data = await res.json();
         setMessages(data.messages);
-        onMessagesLoadedRef.current?.();
+        if (isForced) onMessagesLoadedRef.current?.();
       }
     }
 
-    load();
-    const interval = setInterval(load, 4000);
+    load(true);
+    const interval = setInterval(() => load(false), 4000);
     return () => {
       cancelled = true;
       clearInterval(interval);
