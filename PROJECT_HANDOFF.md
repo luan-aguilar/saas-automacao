@@ -22,6 +22,13 @@ Plataforma multi-tenant de automação de atendimento no WhatsApp com IA (OpenAI
 - OpenAI (chave própria por tenant, criptografada em `Config.openaiApiKeyEncrypted`)
 - bcryptjs (não bcrypt nativo — roda em serverless da Vercel sem binário nativo)
 
+## ⏳ Pendências abertas (checar aqui primeiro)
+
+- **Forçar troca de senha temporária de verdade** (segurança, severidade baixa): hoje `mustChangePassword` só mostra um aviso visual em `/profile` — não existe nenhum bloqueio real impedindo o usuário de continuar usando o resto do sistema com a senha temporária indefinidamente. Identificado numa auditoria de segurança (2026-09-05), adiado de propósito por mexer em `middleware.ts`/`auth.config.ts` (risco de regressão em login sem poder testar ao vivo) — fazer com calma, testando bem.
+- **Sincronizar "mensagem lida no celular" pro SaaS**: o código em `CHATS_UPDATE` (webhook do Evolution API) já tenta isso, mas o Luan reportou (2026-09-05) que não está funcionando. Suspeita: o Baileys pode emitir um evento separado (`message-receipt.update`) pra confirmação de leitura, distinto do `chats.update` que o código escuta hoje — não corrigido às cegas. **Esperando o Luan colar aqui o log real `[WEBHOOK RECEBIDO]`** (Vercel → Logs, filtrar `/api/webhooks/whatsapp`, marcar uma mensagem como lida no celular e pegar a linha que aparece) pra corrigir a extração com base no payload de verdade, não em suposição.
+- **Klan Tattoo ainda não ativada como cliente**: template pronto, preço real configurado, mas falta cadastrar em `/clients` e parear o WhatsApp. `recipientPhones` da notificação está com o número pessoal do Luan pra teste — trocar pelo do estúdio antes de ativar de vez.
+- **Migração da KFG pra API oficial da Meta**: ver checklist completo na seção "Provedores de WhatsApp" abaixo — pendência é do Luan (configuração no Meta for Developers).
+
 ## Migração de schema — RESOLVIDA (2026-09-04)
 
 A branch `pending-schema-migration` (provider Cloud API, `sessionVersion`, campos de credencial da Meta) foi revisada, mesclada na `master`, o `npx prisma db push` rodou contra o banco de produção certo (confirmado por Project Ref do Supabase, `rlbzgtolemhgbnzbumnn`) e o build (`tsc --noEmit` + `npm run build`) passou limpo antes do `git push`. Não há pendência de sincronização entre schema e banco no momento — se uma sessão futura criar novos campos em `schema.prisma`, o procedimento é sempre o mesmo: `db push` contra produção ANTES de dar `git push` do código que os usa (rodar `db push` sem confirmar o projeto certo do Postgres é o jeito de derrubar login/atendimento pra TODOS os tenants de uma vez, não só o mais recente).
