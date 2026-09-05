@@ -35,9 +35,11 @@ import { KeywordCatalogNodeComponent } from "./nodes/keyword-catalog-node";
 import { getTemplateDefinition } from "@/lib/templates/registry";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast-store";
 import { confirm } from "@/lib/confirm-store";
-import { Save, Play, Pause, Undo2, Redo2, AlertTriangle, Sparkles, Blocks } from "lucide-react";
+import { Save, Undo2, Redo2, AlertTriangle, Sparkles, Blocks } from "lucide-react";
 
 const nodeTypes: NodeTypes = {
   trigger: TriggerNodeComponent,
@@ -369,6 +371,29 @@ function FlowBuilderInner({
     setHistoryTick((t) => t + 1);
   }
 
+  /**
+   * Efeito IMEDIATO, independente de "Salvar fluxo" — antes, o botão só
+   * mudava um estado local (`active`) e nada era persistido até o usuário
+   * clicar em "Salvar fluxo" (que reenvia nodes/edges também), deixando
+   * ambíguo se ligar/desligar já tinha efeito ou não. Agora é um Switch com
+   * rótulo explícito ("Fluxo ativo"/"Fluxo inativo") que chama a rota PATCH
+   * dedicada na hora — mesmo padrão já validado no toggle de IA do Chat.
+   */
+  async function handleActiveToggle(next: boolean) {
+    setActive(next);
+    const res = await fetch(`/api/flows/${flowId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isActive: next }),
+    });
+    if (res.ok) {
+      toast({ title: next ? "Fluxo ativado" : "Fluxo desativado", variant: next ? "success" : "warning" });
+    } else {
+      setActive(!next);
+      toast({ title: "Não foi possível alterar o status do fluxo", variant: "destructive" });
+    }
+  }
+
   async function handleSave() {
     const violation = findInteractiveLimitViolation(nodes);
     if (violation) {
@@ -460,10 +485,12 @@ function FlowBuilderInner({
                 </Button>
               </div>
             )}
-            <Button variant={active ? "default" : "outline"} size="sm" onClick={() => setActive((v) => !v)}>
-              {active ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
-              {active ? "Ativo" : "Inativo"}
-            </Button>
+            <div className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5">
+              <Switch checked={active} onCheckedChange={handleActiveToggle} aria-label="Ativar ou desativar este fluxo" />
+              <span className={cn("text-xs font-medium", active ? "text-success" : "text-muted-foreground")}>
+                {active ? "Fluxo ativo" : "Fluxo inativo"}
+              </span>
+            </div>
             <Button size="sm" onClick={handleSave} disabled={saving}>
               <Save className="h-3.5 w-3.5" />
               {saving ? "Salvando..." : "Salvar fluxo"}
