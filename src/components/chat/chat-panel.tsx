@@ -5,6 +5,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatPhone, cn } from "@/lib/utils";
 import { confirm } from "@/lib/confirm-store";
 import { Send, Bot, ListChecks, Trash2, X, ArrowLeft } from "lucide-react";
@@ -44,6 +45,9 @@ export function ChatPanel({
   onBack?: () => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
+  // true enquanto a PRIMEIRA busca de uma conversa recém-aberta ainda não
+  // voltou — nunca fica true de novo nos polls seguintes da mesma conversa.
+  const [messagesLoading, setMessagesLoading] = useState(true);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
@@ -59,8 +63,21 @@ export function ChatPanel({
     onMessagesLoadedRef.current = onMessagesLoaded;
   }, [onMessagesLoaded]);
 
+  // Guarda o id da conversa da renderização anterior — sem isso, trocar de
+  // conversa reaproveitava este mesmo componente (não remonta, não tem
+  // `key`) e continuava mostrando as mensagens da conversa ANTERIOR por
+  // baixo do nome/cabeçalho da conversa NOVA até a busca terminar. Some
+  // errado, ainda que só por um instante.
+  const previousChatIdRef = useRef(chat.id);
+
   useEffect(() => {
     let cancelled = false;
+
+    if (previousChatIdRef.current !== chat.id) {
+      previousChatIdRef.current = chat.id;
+      setMessages([]);
+      setMessagesLoading(true);
+    }
 
     // `isForced` só é true pra ESTA chamada imediata (a que reage a `chat.id`/
     // `reloadSignal` mudando) — o polling periódico abaixo nunca chama
@@ -73,6 +90,7 @@ export function ChatPanel({
       if (res.ok && !cancelled) {
         const data = await res.json();
         setMessages(data.messages);
+        setMessagesLoading(false);
         if (isForced) onMessagesLoadedRef.current?.();
       }
     }
@@ -231,7 +249,15 @@ export function ChatPanel({
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto bg-muted/20 p-4">
-        {messages.map((message) => {
+        {messagesLoading && (
+          <div className="space-y-3">
+            <Skeleton className="h-12 w-2/3 rounded-lg" />
+            <Skeleton className="ml-auto h-9 w-1/2 rounded-lg" />
+            <Skeleton className="h-14 w-3/5 rounded-lg" />
+            <Skeleton className="ml-auto h-9 w-2/5 rounded-lg" />
+          </div>
+        )}
+        {!messagesLoading && messages.map((message) => {
           const isOutbound = message.direction === "OUTBOUND";
           const isSystem = message.sender === "SYSTEM";
           const isSelected = selectedIds.has(message.id);
@@ -328,7 +354,7 @@ export function ChatPanel({
             </div>
           );
         })}
-        {messages.length === 0 && (
+        {!messagesLoading && messages.length === 0 && (
           <p className="pt-10 text-center text-sm text-muted-foreground">
             Nenhuma mensagem ainda nesta conversa.
           </p>
