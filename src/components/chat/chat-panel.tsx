@@ -29,12 +29,15 @@ export function ChatPanel({
   chat,
   onAiToggle,
   onLocalAiStateSync,
+  onMessagesLoaded,
   reloadSignal,
   onBack,
 }: {
   chat: ChatSummary;
   onAiToggle: (chatId: string, aiEnabled: boolean) => void;
   onLocalAiStateSync: (chatId: string, aiEnabled: boolean) => void;
+  /** Chamado toda vez que a busca de mensagens termina (poll normal ou forçado por `reloadSignal`) — usado pelo pai pra saber a hora certa de fechar o toast de "aguarde" da troca de IA. */
+  onMessagesLoaded?: () => void;
   /** Incrementado pelo componente pai para forçar um recarregamento imediato (ex: após limpar a conversa pelo menu lateral). */
   reloadSignal?: number;
   /** Só usado no mobile — volta pra lista de conversas (lá, a lista fica escondida enquanto uma conversa está aberta). */
@@ -47,6 +50,15 @@ export function ChatPanel({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Ref (não state) pra sempre chamar a versão mais recente de `onMessagesLoaded`
+  // sem precisar listar como dependência do efeito abaixo — o componente pai
+  // recria essa função a cada render, e colocá-la nas deps reiniciaria o
+  // polling toda hora.
+  const onMessagesLoadedRef = useRef(onMessagesLoaded);
+  useEffect(() => {
+    onMessagesLoadedRef.current = onMessagesLoaded;
+  }, [onMessagesLoaded]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -55,6 +67,7 @@ export function ChatPanel({
       if (res.ok && !cancelled) {
         const data = await res.json();
         setMessages(data.messages);
+        onMessagesLoadedRef.current?.();
       }
     }
 

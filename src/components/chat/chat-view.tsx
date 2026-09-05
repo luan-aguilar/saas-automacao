@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ConversationList, type ChatSummary } from "./conversation-list";
 import { ChatPanel } from "./chat-panel";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { MessageSquareText, QrCode } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { confirm } from "@/lib/confirm-store";
+import { toast, dismissToast } from "@/lib/toast-store";
 
 type WhatsappStatus = "DISCONNECTED" | "CONNECTING" | "QR_PENDING" | "CONNECTED" | "ERROR";
 
@@ -75,13 +76,40 @@ export function ChatView({
     setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, aiEnabled } : c)));
   }
 
+  // Toast "aguarde" da troca da IA por conversa — criado no clique, apagado
+  // assim que `handleMessagesLoaded` confirmar que a mensagem de sistema
+  // ("IA reativada.../IA pausada...") já chegou (ver essa função abaixo).
+  const pendingAiToastId = useRef<string | null>(null);
+
   async function handleAiToggle(chatId: string, aiEnabled: boolean) {
     syncLocalAiState(chatId, aiEnabled);
+
+    if (pendingAiToastId.current) dismissToast(pendingAiToastId.current);
+    pendingAiToastId.current = toast({
+      title: aiEnabled ? "Reativando a IA nesta conversa..." : "Pausando a IA nesta conversa...",
+      description: "Aguarde só um instante.",
+      durationMs: 15000, // rede de segurança — some sozinho mesmo se o reload abaixo falhar
+    });
+
     await fetch(`/api/chats/${chatId}/toggle-ai`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ aiEnabled }),
     });
+
+    // Força a Central de Atendimento a buscar as mensagens NA HORA, em vez de
+    // esperar o próximo polling (a cada 4s) — é isso que fazia a confirmação
+    // demorar visivelmente pra aparecer, mesmo a mensagem já existindo no
+    // banco desde a resposta do POST acima.
+    setReloadSignal((n) => n + 1);
+  }
+
+  /** Chamado pelo ChatPanel toda vez que a lista de mensagens termina de recarregar (poll normal ou forçado). */
+  function handleMessagesLoaded() {
+    if (pendingAiToastId.current) {
+      dismissToast(pendingAiToastId.current);
+      pendingAiToastId.current = null;
+    }
   }
 
   async function handleGlobalAiToggle(enabled: boolean) {
@@ -90,6 +118,13 @@ export function ChatView({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled }),
+    });
+    toast({
+      title: enabled ? "Chave geral de IA reativada" : "Chave geral de IA desativada",
+      description: enabled
+        ? "Contatos novos voltam a receber resposta automática."
+        : "Contatos novos não recebem mais resposta automática.",
+      variant: enabled ? "success" : "warning",
     });
   }
 
@@ -163,6 +198,7 @@ export function ChatView({
               chat={selectedChat}
               onAiToggle={handleAiToggle}
               onLocalAiStateSync={syncLocalAiState}
+              onMessagesLoaded={handleMessagesLoaded}
               reloadSignal={reloadSignal}
               onBack={() => setSelectedId(null)}
             />
