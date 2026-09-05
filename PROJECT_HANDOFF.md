@@ -22,11 +22,11 @@ Plataforma multi-tenant de automação de atendimento no WhatsApp com IA (OpenAI
 - OpenAI (chave própria por tenant, criptografada em `Config.openaiApiKeyEncrypted`)
 - bcryptjs (não bcrypt nativo — roda em serverless da Vercel sem binário nativo)
 
-## ⚠️ PENDÊNCIA CRÍTICA — migração de schema não aplicada no banco de produção
+## Migração de schema — RESOLVIDA (2026-09-04)
 
-Existem commits locais (não dados de `git push`) que mudam `prisma/schema.prisma` — o Luan não tem o `.env` (acesso ao Postgres) na máquina onde essas sessões rodam, só no computador de casa. **Antes de dar push desses commits pro `origin/master`**, é obrigatório rodar `npx prisma db push` contra o banco de produção (com o `.env` de casa) — sem isso, `authorize()` em `src/auth.ts` (login, usado por TODO mundo — MASTER, KFG, Home Concept) quebra global, porque busca o usuário sem `select` e o Prisma Client novo espera colunas que ainda não existem no Postgres real.
+A branch `pending-schema-migration` (provider Cloud API, `sessionVersion`, campos de credencial da Meta) foi revisada, mesclada na `master`, o `npx prisma db push` rodou contra o banco de produção certo (confirmado por Project Ref do Supabase, `rlbzgtolemhgbnzbumnn`) e o build (`tsc --noEmit` + `npm run build`) passou limpo antes do `git push`. Não há pendência de sincronização entre schema e banco no momento — se uma sessão futura criar novos campos em `schema.prisma`, o procedimento é sempre o mesmo: `db push` contra produção ANTES de dar `git push` do código que os usa (rodar `db push` sem confirmar o projeto certo do Postgres é o jeito de derrubar login/atendimento pra TODOS os tenants de uma vez, não só o mais recente).
 
-Se você é uma sessão nova e vê commits locais à frente de `origin/master` tocando `schema.prisma`: NÃO dê push sem antes confirmar com o Luan se o `db push` já rodou. Ver `git log` e comparar com `git log origin/master` pra saber exatamente quais commits estão pendentes.
+Regra permanente pra evitar isso de novo: se `schema.prisma` mudou num commit que ainda não chegou no `origin/master`, rode `db push` antes do `git push`, e confirme visualmente que o `DATABASE_URL`/`DIRECT_URL` locais apontam pro projeto Supabase certo (comparar o trecho `postgres.<ref>` da connection string com o painel do Supabase) antes de rodar — o comando em si é seguro/idempotente quando a mudança é aditiva, o risco real é aplicar no banco errado e achar que está sincronizado.
 
 ## Estado atual: TUDO FUNCIONANDO EM PRODUÇÃO
 
