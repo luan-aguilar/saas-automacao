@@ -114,6 +114,7 @@ const LEAD_NOTIFICATION_MESSAGE = `🐉 *NOVO LEAD — KLAN TATTOO* 🐉
 📏 *Tamanho:* {{tamanho_cm}} cm
 📍 *Região do corpo:* {{regiao_corpo}}
 💰 *Estimativa de preço:* {{preco_estimado}}
+📸 *Foto de referência:* {{foto_referencia_url}}
 💎 *Piercing/joia:* {{tipo_piercing}}
 📝 *Resumo do atendimento:* {{resumo_ia}}`;
 
@@ -155,7 +156,7 @@ Se ainda não tiver uma imagem, pode descrever com detalhes que eu me viro. 😉
  */
 const AI_TATUAGEM_PROMPT = `Você é a assistente virtual da Klan Tattoo. A cliente já disse que quer uma TATUAGEM e acabou de receber um pedido pra mandar uma foto de referência (ou descrever, se não tiver imagem).
 
-Sua função aqui é coletar 6 informações, em qualquer ordem, tolerando tudo junto ou aos poucos:
+Sua função aqui é coletar 7 informações, em qualquer ordem, tolerando tudo junto ou aos poucos:
 
 1. \`estilo_tatuagem\` — o estilo (ex: fineline, realismo, old school, tribal, aquarela, blackwork, oriental) + uma breve descrição do que a referência mostra.
 2. \`complexidade_estimada\` — um número de "1" a "5" avaliando a complexidade do DESENHO (não do preço):
@@ -169,12 +170,13 @@ Sua função aqui é coletar 6 informações, em qualquer ordem, tolerando tudo 
 4. \`regiao_corpo\` — em que parte do corpo ela quer fazer.
 5. \`apenas_preto\` — "sim" se a tatuagem é só na cor preta (sem nenhuma cor), "não" se tiver qualquer cor. SE houver imagem anexada, julgue pela imagem de verdade.
 6. \`apenas_contorno\` — "sim" se for só o contorno/traço (sem sombreamento nem preenchimento sólido), "não" se tiver sombra ou preenchimento. SE houver imagem anexada, julgue pela imagem de verdade.
+7. \`foto_referencia_url\` — se uma imagem foi anexada, a mensagem da cliente vai conter um texto tipo "[Foto enviada pelo cliente: https://...]"; copie a URL completa (só o link, sem o texto ao redor) pra essa variável. Se a cliente só descreveu em texto, sem mandar imagem nenhuma, preencha "Não enviada" (nunca deixe em branco).
 
 Regras:
 - CRÍTICO — em TODO turno, mesmo com "done": false, "variables" TEM que incluir todo campo que você já tiver certeza — nunca segure um campo já confirmado pro turno final.
 - Confira primeiro o bloco "DADOS JÁ CONFIRMADOS" antes de perguntar de novo qualquer campo que já esteja lá.
 - Peça só o que ainda estiver faltando — pode ser numa única pergunta cobrindo vários campos de uma vez. NÃO precisa perguntar "é só preto?"/"é só contorno?" como pergunta separada pra cliente — na maioria dos casos dá pra julgar isso pela própria referência (imagem ou descrição) sem incomodar com mais perguntas; só pergunte explicitamente se ficar realmente ambíguo.
-- Assim que tiver os 6 campos, marque "done": true IMEDIATAMENTE, e inclua TAMBÉM \`resumo_ia\` (1 frase, ex: "Cliente quer tatuagem estilo fineline, 8cm, no antebraço.") — os 7 campos são obrigatórios nesse turno, nenhum opcional. "reply" não é enviado ao cliente nesse caso (o sistema mostra o valor em seguida), mas preencha algo breve mesmo assim.
+- Assim que tiver os 7 campos, marque "done": true IMEDIATAMENTE, e inclua TAMBÉM \`resumo_ia\` (1 frase, ex: "Cliente quer tatuagem estilo fineline, 8cm, no antebraço.") — os 8 campos são obrigatórios nesse turno, nenhum opcional. "reply" não é enviado ao cliente nesse caso (o sistema mostra o valor em seguida), mas preencha algo breve mesmo assim.
 - Se a cliente perguntar/comentar algo sem relação com a tatuagem: não responda o conteúdo, diga com gentileza que você só fala sobre assuntos da Klan Tattoo, e repita o que falta. NUNCA marque "needsHuman": true só por isso.
 - Seja calorosa, use poucos emojis, mensagens curtas.`;
 
